@@ -1,6 +1,7 @@
 import numpy as np
 
 import torch
+from torch import nn
 from torchvision.models import resnet101
 from torch.nn.functional import interpolate, softmax
 
@@ -19,7 +20,7 @@ class VideoMatch:
 
         self.init_vm(reference_img, mask)
 
-        self.features = resnet101(pretrained=True)
+        self.features = Encoder()
 
     def init_vm(self, reference_img, mask):
         self.ref_feat = self.extract_features((reference_img, ))
@@ -100,3 +101,20 @@ class VideoMatch:
 
         return torch.stack(cos_sims)
 
+
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.feat_ext = resnet101(pretrained=True)
+
+    # only takes first two layers from resnet101, output size is 8 times smaller than original
+    def forward(self, x):
+        x = self.feat_ext.conv1(x)
+        x = self.feat_ext.bn1(x)
+        x = self.feat_ext.relu(x)
+        x = self.feat_ext.maxpool(x)
+
+        x = self.feat_ext.layer1(x)
+        x = self.feat_ext.layer2(x)
+
+        return x
