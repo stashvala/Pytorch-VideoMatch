@@ -1,0 +1,7 @@
+.idea/
+
+gists/
+
+__pycache__/
+
+.env/
