@@ -1,7 +1,10 @@
+# python
+__pycache__/
+.env/
+
+# ide
 .idea/
 
+# my dirs
 gists/
-
-__pycache__/
-
-.env/
+DAVIS/
