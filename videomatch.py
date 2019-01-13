@@ -5,6 +5,7 @@ from torch.nn.functional import interpolate, softmax
 
 from utils import l2_normalization
 
+
 class VideoMatch:
     def __init__(self, ref_t, mask_t, k=20, d=100, out_shape=None, cuda_dev=None):
 
@@ -56,8 +57,6 @@ class VideoMatch:
 
         return sim_fg, sim_bg
 
-
-
     def predict(self, test_t):
         sim_fg, sim_bg = self.soft_match(test_t)
 
@@ -65,9 +64,9 @@ class VideoMatch:
         sim_fg = interpolate(sim_fg.unsqueeze(0), size=self.out_shape, mode='bilinear', align_corners=False)
         sim_bg = interpolate(sim_bg.unsqueeze(0), size=self.out_shape, mode='bilinear', align_corners=False)
 
-        fg_prob, bg_prob = self.softmax(sim_fg, sim_bg)
+        fg_prob, bg_prob = self.softmax(sim_fg.squeeze(0), sim_bg.squeeze(0))
 
-        return fg_prob.squeeze(), bg_prob.squeeze()
+        return fg_prob, bg_prob
 
     def outlier_removal(self, prev_fg_pred, curr_fg_pred):
         pass
@@ -117,11 +116,14 @@ class Encoder(nn.Module):
 
 if __name__ == '__main__':
     import sys
+    from time import time
+
     import numpy as np
     from PIL import Image
     import matplotlib.pyplot as plt
 
     from utils import preprocess
+    from visualize import plot_result
 
     if len(sys.argv) < 4:
         raise ValueError("Expected at least three arguments: "
@@ -130,11 +132,20 @@ if __name__ == '__main__':
 
     ref_img = Image.open(sys.argv[1])
     ref_tensor = preprocess(ref_img)
-    mask_tensor = torch.from_numpy(np.array(Image.open(sys.argv[2])))
-    test_tensors = preprocess(*[Image.open(arg) for arg in sys.argv[3:]])
+
+    mask = np.array(Image.open(sys.argv[2]))
+    mask_tensor = torch.from_numpy(mask)
+
+    test_imgs = [Image.open(arg) for arg in sys.argv[3:]]
+    img_names = ["/".join(arg.split("/")[-2:]) for arg in sys.argv[3:]]
+    test_tensors = preprocess(*test_imgs)
 
     vm = VideoMatch(ref_tensor, mask_tensor, out_shape=ref_img.size[::-1], cuda_dev=0)
 
-    for fg, bg in vm.predict(test_tensors):
-        print(fg.shape, bg.shape)
+    start = time()
+    fgs, bgs = vm.predict(test_tensors)
+    print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
 
+    for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):
+        plot_result(np.array(ref_img), mask, np.array(test_img), fg.data.cpu().numpy(), bg.data.cpu().numpy(), name)
+        plt.show()
