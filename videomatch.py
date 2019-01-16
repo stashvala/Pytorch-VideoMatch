@@ -76,9 +76,9 @@ class VideoMatch:
         assert (X.shape[0] == 1)
         assert (X.shape[1:] == Y.shape[1:])
 
-        # l2 normalization
-        Xnorm = l2_normalization(X, dim=-1)
-        Ynorm = l2_normalization(Y, dim=-1)
+        # normalize along channels
+        Xnorm = l2_normalization(X, dim=1)
+        Ynorm = l2_normalization(Y, dim=1)
 
         # compute pairwise similarity between all pairs of features
         return torch.einsum("xijk, bilm -> bjklm", Xnorm, Ynorm)

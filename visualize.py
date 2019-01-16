@@ -37,6 +37,8 @@ def plot_result(ref_img, mask, test_img, fg, bg, name="", axes=None):
 
 
 def plot_segmentation(ref_img, fg, bg, color='r', alpha=0.4, ax=None):
+    assert(fg.shape == bg.shape == ref_img.shape[:2])
+
     ax = plt.gca() if ax is None else ax
 
     seg = (fg > bg).astype(np.uint8)
