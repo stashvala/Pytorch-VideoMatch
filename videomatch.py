@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torchvision.models import resnet101
 from torch.nn.functional import interpolate, softmax
 
@@ -7,14 +8,16 @@ from utils import l2_normalization
 
 
 class VideoMatch:
-    def __init__(self, ref_t, mask_t, k=20, d=100, out_shape=None, cuda_dev=None):
+    def __init__(self, ref_t, mask_t, k=20, d=51, out_shape=None, cuda_dev=None):
 
         self.device = "cpu" if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
         self.k = k
+        self.d = d
 
         self.ref_feat = None
         self.mask_fg = None
         self.mask_bg = None
+        self.dilate_kernel = None
         self.feat_shape = (0, 0)
         self.out_shape = tuple(ref_t.shape[-2:]) if out_shape is None else out_shape
 
@@ -34,6 +37,8 @@ class VideoMatch:
         self.mask_bg = interpolate(self.mask_bg, size=self.feat_shape, mode='bilinear', align_corners=False).unsqueeze(0)
 
         self.mask_fg, self.mask_bg = self.to_device(self.mask_fg, self.mask_bg)
+
+        self.dilate_kernel = torch.ones(1, 1, self.d, self.d).cuda(self.device)
 
     def to_device(self, *tensors):
         t = tuple(t.cuda(self.device) for t in tensors)
@@ -73,8 +78,27 @@ class VideoMatch:
 
         return fgs > bgs
 
-    def outlier_removal(self, prev_fg_pred, curr_fg_pred):
-        pass
+    def dilate_mask(self, mask_t):
+        assert(self.d % 2 != 0)
+
+        # no need to use mask_t.clone().detach() here
+        # mask with 4d shape needed, because conv2d requires NCHW shape
+        mask_4d = mask_t
+        while len(mask_4d.shape) < 4:
+            mask_4d = mask_4d.unsqueeze(0)
+
+        pad = (self.d - 1) // 2
+
+        return F.conv2d(mask_4d.float(), self.dilate_kernel, padding=pad) > 0.
+
+    def outlier_removal(self, prev_segm, curr_segm):
+        assert(prev_segm.shape == curr_segm.shape and len(curr_segm.shape) == 2)
+        # TODO: should this be handled elsewhere?
+        prev_segm, curr_segm = self.to_device(prev_segm), self.to_device(curr_segm)
+
+        prev_segm_dil = self.dilate_mask(prev_segm)
+        # TODO: should the squeeze be left out?
+        return (prev_segm_dil * curr_segm).squeeze()
 
     @staticmethod
     def cos_similarity(X, Y):
@@ -128,7 +152,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     from utils import preprocess
-    from visualize import plot_result
+    from visualize import plot_fg_bg, plot_segmentation
 
     if len(sys.argv) < 4:
         raise ValueError("Expected at least three arguments: "
@@ -147,10 +171,19 @@ if __name__ == '__main__':
 
     vm = VideoMatch(ref_tensor, mask_tensor, out_shape=ref_img.size[::-1], cuda_dev=0)
 
-    start = time()
-    fgs, bgs = vm.predict_fg_bg(test_tensors)
-    print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
+    # start = time()
+    # fgs, bgs = vm.predict_fg_bg(test_tensors)
+    # print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
 
-    for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):
-        plot_result(np.array(ref_img), mask, np.array(test_img), fg.data.cpu().numpy(), bg.data.cpu().numpy(), name)
-        plt.show()
+    # for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):
+    #     plot_fg_bg(np.array(ref_img), mask, np.array(test_img), fg.data.cpu().numpy(), bg.data.cpu().numpy(), name)
+    #     plt.show()
+
+    start = time()
+    segments = vm.segment(test_tensors)
+    segment = vm.outlier_removal(mask_tensor, segments[0])
+
+    print("Segmentation for {} images with outlier detection took {:.2f} ms"
+          .format(len(test_imgs), (time() - start) * 1000))
+    plot_segmentation(np.array(ref_img), segment.data.cpu().numpy())
+    plt.show()

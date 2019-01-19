@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
 
 
-def plot_result(ref_img, mask, test_img, fg, bg, title="", axes=None):
+def plot_fg_bg(ref_img, mask, test_img, fg, bg, title="", axes=None):
+    assert(len(fg.shape) == 2 and fg.shape == bg.shape == ref_img.shape[:2])
+
     _, axes = plt.subplots(2, 3) if axes is None else axes
     assert(axes.shape == (2, 3))
 
@@ -36,12 +38,10 @@ def plot_result(ref_img, mask, test_img, fg, bg, title="", axes=None):
     return axes
 
 
-def plot_segmentation(ref_img, fg, bg, color='r', alpha=0.4, ax=None):
-    assert(len(fg.shape) == 2 and fg.shape == bg.shape == ref_img.shape[:2])
-
+def plot_segmentation(ref_img, seg, color='r', alpha=0.4, ax=None):
+    assert(type(seg) == np.ndarray and len(seg.shape) == 2)
     ax = plt.gca() if ax is None else ax
 
-    seg = (fg > bg).astype(np.uint8)
     c = (np.array(mcolors.to_rgb(color)) * 255).astype(np.uint8)
     seg3d = np.repeat(seg[:, :, np.newaxis], 3, axis=2)
     segcolor = seg3d * c
@@ -53,3 +53,21 @@ def plot_segmentation(ref_img, fg, bg, color='r', alpha=0.4, ax=None):
     ax.imshow(np.array(blended))
 
     return ax
+
+
+def plot_dilation(mask_orig, mask_dil, title="", axes=None):
+    assert(mask_orig.shape == mask_dil.shape)
+
+    _, axes = plt.subplots(1, 2) if axes is None else axes
+    assert(len(axes) == 2)
+
+    fig = plt.gcf()
+    fig.suptitle(title)
+
+    axes[0].imshow(mask_orig)
+    axes[0].set_title("Original")
+
+    axes[1].imshow(mask_dil)
+    axes[1].set_title("Dilated")
+
+    return axes
