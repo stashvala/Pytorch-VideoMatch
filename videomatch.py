@@ -57,7 +57,7 @@ class VideoMatch:
 
         return sim_fg, sim_bg
 
-    def predict(self, test_t):
+    def predict_fg_bg(self, test_t):
         sim_fg, sim_bg = self.soft_match(test_t)
 
         # upsample similarity response
@@ -67,6 +67,11 @@ class VideoMatch:
         fg_prob, bg_prob = self.softmax(sim_fg.squeeze(0), sim_bg.squeeze(0))
 
         return fg_prob, bg_prob
+
+    def segment(self, test_t):
+        fgs, bgs = self.predict_fg_bg(test_t)
+
+        return fgs > bgs
 
     def outlier_removal(self, prev_fg_pred, curr_fg_pred):
         pass
@@ -143,7 +148,7 @@ if __name__ == '__main__':
     vm = VideoMatch(ref_tensor, mask_tensor, out_shape=ref_img.size[::-1], cuda_dev=0)
 
     start = time()
-    fgs, bgs = vm.predict(test_tensors)
+    fgs, bgs = vm.predict_fg_bg(test_tensors)
     print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
 
     for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):

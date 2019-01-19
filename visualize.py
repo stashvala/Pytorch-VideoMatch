@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
 
 
-def plot_result(ref_img, mask, test_img, fg, bg, name="", axes=None):
+def plot_result(ref_img, mask, test_img, fg, bg, title="", axes=None):
     _, axes = plt.subplots(2, 3) if axes is None else axes
     assert(axes.shape == (2, 3))
 
     # we get fig like this to avoid extra function parameter
     fig = plt.gcf()
-    fig.suptitle(name)
+    fig.suptitle(title)
 
     axes[0, 0].imshow(ref_img)
     axes[0, 0].set_title("Reference image")
@@ -37,7 +37,7 @@ def plot_result(ref_img, mask, test_img, fg, bg, name="", axes=None):
 
 
 def plot_segmentation(ref_img, fg, bg, color='r', alpha=0.4, ax=None):
-    assert(fg.shape == bg.shape == ref_img.shape[:2])
+    assert(len(fg.shape) == 2 and fg.shape == bg.shape == ref_img.shape[:2])
 
     ax = plt.gca() if ax is None else ax
 
