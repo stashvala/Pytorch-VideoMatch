@@ -8,9 +8,9 @@ from utils import l2_normalization
 
 
 class VideoMatch:
-    def __init__(self, k=20, d=51, out_shape=None, cuda_dev=None):
+    def __init__(self, k=20, d=51, out_shape=None, device=None):
 
-        self.device = "cpu" if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
+        self.device = device
         self.k = k
         self.d = d
 
@@ -24,13 +24,17 @@ class VideoMatch:
         self.feat_net = self.to_device(Encoder())
 
     def seq_init(self, ref_t, mask_t):
+        assert(len(mask_t.shape) <= 4)
+
         self.ref_feat = self.extract_features(ref_t)
         self.feat_shape = self.ref_feat.shape[2:4]
 
         self.out_shape = tuple(ref_t.shape[-2:]) if self.out_shape is None else self.out_shape
 
-        # added two dimensions to mask since 4D is needed for bilinear interpolation
-        self.mask_fg = mask_t.unsqueeze(0).unsqueeze(0).float()
+        # added dimensions to mask since 4D is needed for bilinear interpolation
+        self.mask_fg = mask_t.float()  # cast to float just in case it's byte tensor
+        while len(self.mask_fg.shape) < 4:
+            self.mask_fg = self.mask_fg.unsqueeze(0)
         self.mask_bg = (~ self.mask_fg.byte()).float()
 
         # downsample to ref_feat shape, add dim because sim_mat is 5D
@@ -174,7 +178,7 @@ if __name__ == '__main__':
     img_names = ["/".join(arg.split("/")[-2:]) for arg in sys.argv[3:]]
     test_tensors = preprocess(*test_imgs)
 
-    vm = VideoMatch(out_shape=ref_img.size[::-1], cuda_dev=0)
+    vm = VideoMatch(out_shape=ref_img.size[::-1], device="cuda:0")
     vm.seq_init(ref_tensor, mask_tensor)
     # start = time()
     # fgs, bgs = vm.predict_fg_bg(test_tensors)

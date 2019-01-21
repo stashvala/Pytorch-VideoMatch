@@ -138,6 +138,12 @@ class PairSampler(Sampler):
         return self._num_samples
 
 
+def collate_fn(data):
+    ref_frame, test_frame = data
+
+    return ref_frame[0], ref_frame[1], test_frame[0], test_frame[1]
+
+
 if __name__ == '__main__':
     davis = Davis("./DAVIS")
 
