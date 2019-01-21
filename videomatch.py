@@ -8,7 +8,7 @@ from utils import l2_normalization
 
 
 class VideoMatch:
-    def __init__(self, ref_t, mask_t, k=20, d=51, out_shape=None, cuda_dev=None):
+    def __init__(self, k=20, d=51, out_shape=None, cuda_dev=None):
 
         self.device = "cpu" if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
         self.k = k
@@ -19,14 +19,15 @@ class VideoMatch:
         self.mask_bg = None
         self.dilate_kernel = None
         self.feat_shape = (0, 0)
-        self.out_shape = tuple(ref_t.shape[-2:]) if out_shape is None else out_shape
+        self.out_shape = out_shape
 
-        self.features = self.to_device(Encoder())
-        self.init_vm(ref_t, mask_t)
+        self.feat_net = self.to_device(Encoder())
 
-    def init_vm(self, ref_t, mask_t):
+    def seq_init(self, ref_t, mask_t):
         self.ref_feat = self.extract_features(ref_t)
         self.feat_shape = self.ref_feat.shape[2:4]
+
+        self.out_shape = tuple(ref_t.shape[-2:]) if self.out_shape is None else self.out_shape
 
         # added two dimensions to mask since 4D is needed for bilinear interpolation
         self.mask_fg = mask_t.unsqueeze(0).unsqueeze(0).float()
@@ -40,13 +41,16 @@ class VideoMatch:
 
         self.dilate_kernel = torch.ones(1, 1, self.d, self.d).cuda(self.device)
 
+    def online_update(self, prev_segm, prev_feat):
+        pass
+
     def to_device(self, *tensors):
         t = tuple(t.cuda(self.device) for t in tensors)
         return t if len(t) > 1 else t[0]
 
     def extract_features(self, img_t):
         img_t = img_t if len(img_t.shape) == 4 else img_t.unsqueeze(0)
-        return self.features(self.to_device(img_t))
+        return self.feat_net(self.to_device(img_t))
 
     def soft_match(self, test_t):
 
@@ -98,6 +102,7 @@ class VideoMatch:
 
         prev_segm_dil = self.dilate_mask(prev_segm)
         # TODO: should the squeeze be left out?
+        # extrusion
         return (prev_segm_dil * curr_segm).squeeze()
 
     @staticmethod
@@ -169,8 +174,8 @@ if __name__ == '__main__':
     img_names = ["/".join(arg.split("/")[-2:]) for arg in sys.argv[3:]]
     test_tensors = preprocess(*test_imgs)
 
-    vm = VideoMatch(ref_tensor, mask_tensor, out_shape=ref_img.size[::-1], cuda_dev=0)
-
+    vm = VideoMatch(out_shape=ref_img.size[::-1], cuda_dev=0)
+    vm.seq_init(ref_tensor, mask_tensor)
     # start = time()
     # fgs, bgs = vm.predict_fg_bg(test_tensors)
     # print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))

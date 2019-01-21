@@ -13,7 +13,9 @@ class Davis(Dataset):
     years = '2016', '2017', 'all'
     modes = 'train', 'val', 'trainval'
 
-    def __init__(self, base_dir, year='2016', mode='train', transorms=None):
+    def __init__(self, base_dir, year='2016', mode='train', transforms=None):
+        super().__init__()
+
         assert(year in self.years)
         assert(mode in self.modes)
 
@@ -30,7 +32,7 @@ class Davis(Dataset):
 
         self.year = [year] if year in self.years[:-1] else self.years[:-1]
         self.mode = [mode] if mode in self.modes[:-1] else self.modes[:-1]
-        self.transforms = transorms if transorms is not None else self.basic_transform
+        self.transforms = transforms if transforms is not None else self.basic_transform
 
         self.seq_names = []
         for y in self.year:
@@ -129,10 +131,8 @@ class PairSampler(Sampler):
         self._num_samples = len(self._all_pairs)
 
     def __iter__(self):
-        for first_idx, second_idx in self._all_pairs:
-            first_frame = self._dataset[first_idx]
-            second_frame = self._dataset[second_idx]
-            yield first_frame, second_frame
+        for pair_idx in self._all_pairs:
+            yield pair_idx
 
     def __len__(self):
         return self._num_samples
@@ -145,6 +145,7 @@ if __name__ == '__main__':
     print("Number of pairs in pair sampler = ", len(ps))
 
     ps = iter(ps)
-    first_pair = next(ps)
+    pair_idx = next(ps)
+    first_pair = davis[pair_idx[0]], davis[pair_idx[1]]
     print("First frames shapes = ", first_pair[0][0].shape, first_pair[0][1].shape)
     print("Second frames shapes = ", first_pair[1][0].shape, first_pair[1][1].shape)
