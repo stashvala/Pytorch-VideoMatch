@@ -58,9 +58,11 @@ def main():
         train(data_loader, vm, device, lr, weight_decay, iters, epochs, loss_report_iter)
 
 
-def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10):
+def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10, model_save_path=None):
 
+    # set model to train mode
     vm.feat_net.train()
+
     params = filter(lambda p: p.requires_grad, vm.feat_net.parameters())
     optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
     criterion = nn.BCELoss()
@@ -88,6 +90,9 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+    if model_save_path is not None:
+        vm.save_model(model_save_path)
 
 
 if __name__ == '__main__':

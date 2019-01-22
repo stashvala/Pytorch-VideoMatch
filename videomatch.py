@@ -1,9 +1,7 @@
 import torch
-from torch import nn
-import torch.nn.functional as F
-from torchvision.models import resnet101
-from torch.nn.functional import interpolate, softmax
+from torch.nn.functional import interpolate, softmax, conv2d
 
+from encoder import Encoder
 from utils import l2_normalization
 
 
@@ -97,7 +95,7 @@ class VideoMatch:
 
         pad = (self.d - 1) // 2
 
-        return F.conv2d(mask_4d.float(), self.dilate_kernel, padding=pad) > 0.
+        return conv2d(mask_4d.float(), self.dilate_kernel, padding=pad) > 0.
 
     def outlier_removal(self, prev_segm, curr_segm):
         assert(prev_segm.shape == curr_segm.shape and len(curr_segm.shape) == 2)
@@ -127,29 +125,11 @@ class VideoMatch:
         res = softmax(stacked, dim=-1)
         return res.unbind(0)
 
+    def save_model(self, path):
+        self.feat_net.save_weights(path)
 
-class Encoder(nn.Module):
-    def __init__(self):
-        super(Encoder, self).__init__()
-        self.feat_ext = resnet101(pretrained=True)
-
-    # only takes first two layers from resnet101, output size is 8 times smaller than original
-    def forward(self, x):
-        x = self.feat_ext.conv1(x)
-        x = self.feat_ext.bn1(x)
-        x = self.feat_ext.relu(x)
-        x = self.feat_ext.maxpool(x)
-
-        x = self.feat_ext.layer1(x)
-        x = self.feat_ext.layer2(x)
-
-        return x
-
-    def weight_MB(self):
-        """
-        :return: Model size in MegaBytes
-        """
-        return sum(p.numel() for p in self.feat_ext.parameters() if p.requires_grad) * 32 / 4 / 2**20
+    def load_model(self, path):
+        self.feat_net.load_weights(path)
 
 
 if __name__ == '__main__':
