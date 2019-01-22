@@ -24,7 +24,7 @@ def main():
 
     model_checkpoint_path = None
     model_save_path = None
-    loss_report_iter = 10
+    loss_report_iter = 50
 
     # videomatch related
     out_shape = None
@@ -66,7 +66,7 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
     criterion = nn.BCELoss()
 
     for epoch in range(epochs):
-        print("Epoch: \t{}/{}".format(epoch, epochs))
+        print("Epoch: \t[{}/{}]".format(epoch, epochs))
 
         for i, (ref_img, ref_mask, test_img, test_mask) in enumerate(data_loader):
             if i >= iters:
@@ -74,14 +74,15 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
 
             # initialize every time since reference image keeps changing
             vm.seq_init(ref_img, ref_mask)
-            out_mask = vm.segment(test_img)
+            out_mask = vm.segment(test_img).float()
+            out_mask.requires_grad = True
 
-            test_mask = test_mask.cuda(device)
-            
-            loss = criterion(out_mask.float(), test_mask.float())
+            test_mask = test_mask.cuda(device).float()
+
+            loss = criterion(input=out_mask, target=test_mask)
 
             if i % loss_report_iter == 0:
-                print("Loss for iter {}/{}: {}".format(i, iters, loss.data.mean()))
+                print("Loss for iter [{:5d}/{}]:\t {:.2f}".format(i, iters, loss.data.mean()))
 
             # backpropagation
             optimizer.zero_grad()
