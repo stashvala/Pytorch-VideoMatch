@@ -1,3 +1,5 @@
+import argparse
+
 from torch import nn
 from torch.utils.data import DataLoader
 from torch import optim
@@ -5,7 +7,53 @@ from torch import optim
 from videomatch import VideoMatch
 from davis import Davis, PairSampler, collate_fn
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Real time video object segmentation with VideoMatch")
+
+    parser.add_argument("--dataset_path", '-d', default="./DAVIS", type=str,
+                        help="Path to DAVIS dataset (default: ./DAVIS)")
+    parser.add_argument("--year", '-y', default='2016', choices=['2016', '2017', 'all'], type=str,
+                        help="DAVIS challenge year (default: 2016)")
+    parser.add_argument("--set", '-t', default='train', choices=['train', 'val', 'trainval'], type=str,
+                        help="Construct dataset from DAVIS train, val or all sequences (default: train)")
+    parser.add_argument("--sequences", '-q', default=('-1',), nargs='+', metavar="SEQ_NAME",
+                        help="List of sequence names to include in the dataset. Set to -1 to choose all. (default: -1)")
+    parser.add_argument("--shuffle", '-u', default=True, action='store_true', help="Shuffle dataset (default: True)")
+
+    parser.add_argument("--mode", '-m', default='train', choices=['train', 'eval'], type=str,
+                        help="Model train or evaluation/test mode (default: train)")
+    parser.add_argument("--cuda_device", '-c', type=int, help="Id of cuda device. Leave empty for CPU (default: CPU)")
+    parser.add_argument("--model_save", '-s', metavar='PATH', type=str,
+                        help="Path to save trained model (default: None)")
+    parser.add_argument("--model_load", '-o', metavar='PATH', type=str,
+                        help="Path to load trained model (default: None)")
+
+    parser.add_argument("--batch_size", '-b', default=1, type=int, help="Batch size for eval mode (default: 1)")
+    parser.add_argument("--epochs", '-e', default=1, type=int,
+                        help="Number of epochs to iterate through whole dataset when training (default: 1)")
+    parser.add_argument("--iters", '-i', default=10000, type=int,
+                        help="Number of image pairs to iterate through when training (default: 10000)")
+    parser.add_argument("--learning_rate", '-l', default=1e-5, type=float,
+                        help="Learning rate for Adam (default: 0.00001)")
+    parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
+                        help="Weight decay for Adam (default: 0.0005)")
+
+    parser.add_argument("--image_shape", default=(256, 456), metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
+                        help="Input image shape (default: 256 456)")
+    parser.add_argument("--segmentation_shape", '-g', metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
+                        help="Segmentation output shape (default: input image size)")
+
+    parser.add_argument("--loss_report", '-r', default=50, metavar='ITER', type=int,
+                        help="Report loss on every n-th iteration. Set to -1 to turn it off (default: 50)")
+
+    return parser.parse_args()
+
+
 def main():
+
+    parsed_args = parse_args()
+    exit(0)
 
     # dataset related
     davis_dir = "./DAVIS"
