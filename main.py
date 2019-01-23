@@ -96,7 +96,7 @@ def main():
     # TODO: create class for transforms that applies equal transformation to both img and mask
     transforms = None
 
-    dataset = Davis(davis_dir, year, dataset_mode, transforms)
+    dataset = Davis(davis_dir, year, dataset_mode, seq_names, transforms)
     pair_sampler = PairSampler(dataset, randomize=shuffle)
     data_loader = DataLoader(dataset, batch_sampler=pair_sampler, collate_fn=collate_fn)
 

@@ -13,7 +13,7 @@ class Davis(Dataset):
     years = '2016', '2017', 'all'
     modes = 'train', 'val', 'trainval'
 
-    def __init__(self, base_dir, year='2016', mode='train', transforms=None):
+    def __init__(self, base_dir, year='2016', mode='train', use_seq=None, transforms=None):
         super().__init__()
 
         assert(year in self.years)
@@ -44,6 +44,15 @@ class Davis(Dataset):
         # 2016 and 2017 davis datasets contain duplicates
         self.seq_names = set(self.seq_names)
 
+        # check if specified sequences are valid
+        use_seq = set(use_seq)
+        if not use_seq.issubset(self.seq_names):
+            raise RuntimeError("Specified set of sequence names isn't subset of loaded DAVIS dataset (year: {}),"
+                               "\ngiven: {},\nvalid: {}".format(self.year, use_seq, self.seq_names))
+
+        # only use specified sequences
+        self.seq_names = use_seq & self.seq_names
+
         self.sequences = [Sequence(name, self._annotations_dir, self._images_dir) for name in sorted(self.seq_names)]
 
     def __len__(self):
@@ -68,14 +77,14 @@ class Davis(Dataset):
 
         # TODO: move this elsewhere!
         img_transform = transforms.Compose([
-             transforms.Resize((256, 456)),
+             # transforms.Resize((256, 456)),
              transforms.ToTensor(),  # normalizes image to 0-1 values
              transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                   std=[0.229, 0.224, 0.225])
             ])
 
         ann_transform = transforms.Compose([
-             transforms.Resize((256, 456)),  # TODO: is this necessary?
+             # transforms.Resize((256, 456)),  # TODO: is this necessary?
              transforms.ToTensor(),  # normalizes image to 0-1 values
             ])
 
@@ -110,15 +119,11 @@ class Sequence:
 
 
 class PairSampler(Sampler):
-    def __init__(self, dataset, seq_names=None, randomize=True):
+    def __init__(self, dataset, randomize=True):
         super().__init__(data_source=dataset)
         self._dataset = dataset
         self._randomize = randomize
-
-        if seq_names and all(sn in self._dataset.seq_names for sn in seq_names):
-            self._sequences = [self._dataset.sequences[sn] for sn in seq_names]
-        else:
-            self._sequences = self._dataset.sequences
+        self._sequences = self._dataset.sequences
 
         self._all_pairs = []
         for seq_idx, seq in enumerate(self._sequences):
