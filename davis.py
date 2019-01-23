@@ -44,14 +44,15 @@ class Davis(Dataset):
         # 2016 and 2017 davis datasets contain duplicates
         self.seq_names = set(self.seq_names)
 
-        # check if specified sequences are valid
-        use_seq = set(use_seq)
-        if not use_seq.issubset(self.seq_names):
-            raise RuntimeError("Specified set of sequence names isn't subset of loaded DAVIS dataset (year: {}),"
-                               "\ngiven: {},\nvalid: {}".format(self.year, use_seq, self.seq_names))
+        if use_seq is not None:
+            # check if specified sequences are valid
+            use_seq = set(use_seq)
+            if not use_seq.issubset(self.seq_names):
+                raise RuntimeError("Specified set of sequence names isn't subset of loaded DAVIS dataset (year: {}),"
+                                   "\ngiven: {},\nvalid: {}".format(self.year, use_seq, self.seq_names))
 
-        # only use specified sequences
-        self.seq_names = use_seq & self.seq_names
+            # only use specified sequences
+            self.seq_names = use_seq & self.seq_names
 
         self.sequences = [Sequence(name, self._annotations_dir, self._images_dir) for name in sorted(self.seq_names)]
 
