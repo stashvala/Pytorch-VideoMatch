@@ -1,4 +1,5 @@
 import argparse
+import signal
 from time import time
 
 from torch import nn
@@ -121,12 +122,22 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
     optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
     criterion = nn.BCELoss()
 
+    stop_training = False
+
+    # save model on SIGINT (Ctrl + c)
+    def sigint_handler(signal, frame):
+        print("Ctrl+c caught, stopping the training and saving the model...")
+        nonlocal stop_training
+        stop_training = True
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
     for epoch in range(epochs):
         print("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
         start = time()
         for i, (ref_img, ref_mask, test_img, test_mask) in enumerate(data_loader):
-            if i >= iters:
+            if i >= iters or stop_training:
                 break
 
             # initialize every time since reference image keeps changing
@@ -147,6 +158,9 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+        if stop_training:
+            break
 
     if model_save_path is not None:
         vm.save_model(model_save_path)
