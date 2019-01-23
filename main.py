@@ -1,4 +1,5 @@
 import argparse
+from time import time
 
 from torch import nn
 from torch.utils.data import DataLoader
@@ -11,14 +12,15 @@ from davis import Davis, PairSampler, collate_fn
 def parse_args():
     parser = argparse.ArgumentParser(description="Real time video object segmentation with VideoMatch")
 
-    parser.add_argument("--dataset_path", '-d', default="./DAVIS", type=str,
+    parser.add_argument("--dataset", '-d', metavar='PATH', default="./DAVIS", type=str,
                         help="Path to DAVIS dataset (default: ./DAVIS)")
     parser.add_argument("--year", '-y', default='2016', choices=['2016', '2017', 'all'], type=str,
                         help="DAVIS challenge year (default: 2016)")
     parser.add_argument("--set", '-t', default='train', choices=['train', 'val', 'trainval'], type=str,
                         help="Construct dataset from DAVIS train, val or all sequences (default: train)")
-    parser.add_argument("--sequences", '-q', default=('-1',), nargs='+', metavar="SEQ_NAME",
-                        help="List of sequence names to include in the dataset. Set to -1 to choose all. (default: -1)")
+    parser.add_argument("--sequences", '-q', metavar="SEQ_NAME", nargs='+',
+                        help="List of sequence names to include in the dataset. "
+                             "Don't use this flag to choose all. (default: None)")
     parser.add_argument("--shuffle", '-u', default=True, action='store_true', help="Shuffle dataset (default: True)")
 
     parser.add_argument("--mode", '-m', default='train', choices=['train', 'eval'], type=str,
@@ -39,12 +41,12 @@ def parse_args():
     parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
                         help="Weight decay for Adam (default: 0.0005)")
 
-    parser.add_argument("--image_shape", default=(256, 456), metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
+    parser.add_argument("--input_image_shape", metavar=('HEIGHT', 'WIDTH'), default=(256, 456), nargs=2, type=int,
                         help="Input image shape (default: 256 456)")
     parser.add_argument("--segmentation_shape", '-g', metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
                         help="Segmentation output shape (default: input image size)")
 
-    parser.add_argument("--loss_report", '-r', default=50, metavar='ITER', type=int,
+    parser.add_argument("--loss_report", '-r', metavar='ITER', default=50, type=int,
                         help="Report loss on every n-th iteration. Set to -1 to turn it off (default: 50)")
 
     return parser.parse_args()
@@ -53,29 +55,33 @@ def parse_args():
 def main():
 
     parsed_args = parse_args()
-    exit(0)
 
     # dataset related
-    davis_dir = "./DAVIS"
-    year = '2016'
-    mode = 'train'
-    transforms = None
-    shuffle = True
+    davis_dir = parsed_args.dataset
+    year = parsed_args.year
+    dataset_mode = parsed_args.set
+    seq_names = parsed_args.sequences
+    shuffle = parsed_args.shuffle
 
-    # cnn related
-    cuda_dev = 0
-    batch_size = 1
-    epochs = 1
-    iters = -1
-    lr = 1e-5
-    weight_decay = 5e-4
+    # model related
+    mode = parsed_args.mode
+    cuda_dev = parsed_args.cuda_device
+    model_save_path = parsed_args.model_save
+    model_load_path = parsed_args.model_load
 
-    model_checkpoint_path = None
-    model_save_path = None
-    loss_report_iter = 50
+    # training related
+    batch_size = parsed_args.batch_size
+    epochs = parsed_args.epochs
+    iters = parsed_args.iters
+    lr = parsed_args.learning_rate
+    weight_decay = parsed_args.weight_decay
 
     # videomatch related
-    out_shape = None
+    img_shape = parsed_args.input_image_shape
+    seg_shape = parsed_args.segmentation_shape
+
+    # misc
+    loss_report_iter = parsed_args.loss_report
 
     # TODO: add logger
     # args checks
@@ -87,23 +93,23 @@ def main():
 
     device = "cpu" if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
 
-    model = None
-    if model_checkpoint_path is not None:
-        pass  # load model
-    else:
-        pass  # create model
+    # TODO: create class for transforms that applies equal transformation to both img and mask
+    transforms = None
 
-    dataset = Davis(davis_dir, year, mode, transforms)
+    dataset = Davis(davis_dir, year, dataset_mode, transforms)
     pair_sampler = PairSampler(dataset, randomize=shuffle)
     data_loader = DataLoader(dataset, batch_sampler=pair_sampler, collate_fn=collate_fn)
 
-    if iters == -1:
-        iters = len(data_loader)
+    iters = len(data_loader) if iters == -1 else iters
 
-    vm = VideoMatch(out_shape=out_shape, device=device)
+    vm = VideoMatch(out_shape=seg_shape, device=device)
+    if model_load_path is not None:
+        vm.load_model(model_load_path)
 
     if mode == 'train':
-        train(data_loader, vm, device, lr, weight_decay, iters, epochs, loss_report_iter)
+        train(data_loader, vm, device, lr, weight_decay, iters, epochs, loss_report_iter, model_save_path)
+    elif mode == 'eval':
+        pass
 
 
 def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10, model_save_path=None):
@@ -116,8 +122,9 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
     criterion = nn.BCELoss()
 
     for epoch in range(epochs):
-        print("Epoch: \t[{}/{}]".format(epoch, epochs))
+        print("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
+        start = time()
         for i, (ref_img, ref_mask, test_img, test_mask) in enumerate(data_loader):
             if i >= iters:
                 break
@@ -131,8 +138,10 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
 
             loss = criterion(input=out_mask, target=test_mask)
 
-            if i % loss_report_iter == 0:
-                print("Loss for iter [{:5d}/{}]:\t {:.2f}".format(i, iters, loss.data.mean()))
+            if i % loss_report_iter == 0 and i > 0:
+                end = time() - start
+                print("Loss for iter [{:5d}/{}]:\t {:.2f}, \t it took {:.2f} s".format(i, iters, loss.data.mean(), end))
+                start = time()
 
             # backpropagation
             optimizer.zero_grad()
