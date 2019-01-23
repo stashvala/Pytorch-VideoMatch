@@ -70,7 +70,9 @@ class Davis(Dataset):
         # do the necessary transformation and possible image augmentation
         img_t, ann_t = self.transforms(img, ann)
 
-        return img_t, ann_t
+        frame = Frame(seq_idx, self.sequences[seq_idx].name, frame_idx, img_t, ann_t)
+
+        return frame
 
     @staticmethod
     def basic_transform(img, ann):
@@ -90,6 +92,15 @@ class Davis(Dataset):
             ])
 
         return img_transform(img), ann_transform(ann)
+
+
+class Frame:
+    def __init__(self, seq_idx, seq_name, frame_idx, img_t, ann_t):
+        self.seq_idx = seq_idx
+        self.seq_name = seq_name
+        self.frame_idx = frame_idx
+        self.img_t = img_t
+        self.ann_t = ann_t
 
 
 class Sequence:
@@ -134,20 +145,41 @@ class PairSampler(Sampler):
         if self._randomize:
             shuffle(self._all_pairs)
 
-        self._num_samples = len(self._all_pairs)
-
     def __iter__(self):
         for pair_idx in self._all_pairs:
             yield pair_idx
 
     def __len__(self):
-        return self._num_samples
+        return len(self._all_pairs)
 
 
-def collate_fn(data):
+def collate_pairs(data):
     ref_frame, test_frame = data
 
-    return ref_frame[0], ref_frame[1], test_frame[0], test_frame[1]
+    return ref_frame.img_t, ref_frame.ann_t, test_frame.img_t, test_frame.ann_t
+
+
+class MultiFrameSampler(Sampler):
+    def __init__(self, dataset):
+        super().__init__(data_source=dataset)
+        self._dataset = dataset
+        self._sequences = self._dataset.sequences
+
+        self._samples = []
+        for seq_idx, seq in enumerate(self._sequences):
+            idx_pairs = [(seq_idx, frame_idx) for frame_idx in range(len(seq))]
+            self._samples.extend(idx_pairs)
+
+    def __iter__(self):
+        for frame_idx in self._samples:
+            yield frame_idx
+
+    def __len__(self):
+        return len(self._samples)
+
+
+def collate_multiframes(data):
+    return data
 
 
 if __name__ == '__main__':

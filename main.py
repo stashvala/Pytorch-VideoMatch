@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torch import optim
 
 from videomatch import VideoMatch
-from davis import Davis, PairSampler, collate_fn
+from davis import Davis, PairSampler, MultiFrameSampler, collate_pairs, collate_multiframes
 
 
 def parse_args():
@@ -49,6 +49,8 @@ def parse_args():
 
     parser.add_argument("--loss_report", '-r', metavar='ITER', default=50, type=int,
                         help="Report loss on every n-th iteration. Set to -1 to turn it off (default: 50)")
+    parser.add_argument("--visualize", '-v', default=True, action='store_true',
+                        help="Visualize results in eval mode (default: True)")
 
     return parser.parse_args()
 
@@ -83,6 +85,7 @@ def main():
 
     # misc
     loss_report_iter = parsed_args.loss_report
+    visualize = parsed_args.visualize
 
     # TODO: add logger
     # args checks
@@ -92,28 +95,38 @@ def main():
     if iters != -1 and epochs > 1:
         print("Warning: iters is set to {} and not to -1 (full dataset), but epoch is > 1".format(iters))
 
-    device = "cpu" if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
+    if mode == 'eval' and shuffle:
+        print("Warning: dataset shuffle can't be set to True in 'eval' mode, setting it to False!")
+        shuffle = False
+
+    if mode != 'eval' and visualize:
+        print("Warning: visualize is set to True, but mode isn't 'eval'")
+
+    device = None if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
 
     # TODO: create class for transforms that applies equal transformation to both img and mask
     transforms = None
-
     dataset = Davis(davis_dir, year, dataset_mode, seq_names, transforms)
-    pair_sampler = PairSampler(dataset, randomize=shuffle)
-    data_loader = DataLoader(dataset, batch_sampler=pair_sampler, collate_fn=collate_fn)
-
-    iters = len(data_loader) if iters == -1 else iters
 
     vm = VideoMatch(out_shape=seg_shape, device=device)
     if model_load_path is not None:
         vm.load_model(model_load_path)
 
     if mode == 'train':
-        train(data_loader, vm, device, lr, weight_decay, iters, epochs, loss_report_iter, model_save_path)
+        pair_sampler = PairSampler(dataset, randomize=shuffle)
+        data_loader = DataLoader(dataset, batch_sampler=pair_sampler, collate_fn=collate_pairs)
+        iters = len(data_loader) if iters == -1 else iters
+
+        train_vm(data_loader, vm, device, lr, weight_decay, iters, epochs, loss_report_iter, model_save_path)
     elif mode == 'eval':
-        pass
+        multiframe_sampler = MultiFrameSampler(dataset)
+        data_loader = DataLoader(dataset, sampler=multiframe_sampler, collate_fn=collate_multiframes,
+                                 batch_size=batch_size, num_workers=batch_size)
+
+        eval_vm(data_loader, vm, visualize)
 
 
-def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10, model_save_path=None):
+def train_vm(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10, model_save_path=None):
 
     # set model to train mode
     vm.feat_net.train()
@@ -164,6 +177,22 @@ def train(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_repor
 
     if model_save_path is not None:
         vm.save_model(model_save_path)
+
+
+def eval_vm(data_loader, vm, visualize=True):
+
+    # set model to eval mode
+    vm.feat_net.eval()
+
+    ref_frame = None
+    prev_seq_idx = -1
+    for frames in data_loader:
+        if prev_seq_idx != frames[0].seq_idx:
+            ref_frame = frames[0]
+            test_frames = frames[1:]
+            prev_seq_idx = ref_frame.seq_idx
+        else:
+            test_frames = frames
 
 
 if __name__ == '__main__':
