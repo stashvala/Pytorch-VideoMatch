@@ -141,7 +141,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     from utils import preprocess
-    from visualize import plot_fg_bg, plot_segmentation
+    from visualize import plot_fg_bg, blend_img_segmentation
 
     if len(sys.argv) < 4:
         raise ValueError("Expected at least three arguments: "
@@ -160,6 +160,7 @@ if __name__ == '__main__':
 
     vm = VideoMatch(out_shape=ref_img.size[::-1], device="cuda:0")
     vm.seq_init(ref_tensor, mask_tensor)
+
     # start = time()
     # fgs, bgs = vm.predict_fg_bg(test_tensors)
     # print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
@@ -174,5 +175,6 @@ if __name__ == '__main__':
 
     print("Segmentation for {} images with outlier detection took {:.2f} ms"
           .format(len(test_imgs), (time() - start) * 1000))
-    plot_segmentation(np.array(ref_img), segment.data.cpu().numpy())
+    blended = blend_img_segmentation(np.array(ref_img), segment.data.cpu().numpy())
+    plt.imshow(blended)
     plt.show()

@@ -29,7 +29,8 @@ def plot_fg_bg(ref_img, mask, test_img, fg, bg, title="", axes=None):
     axes[1, 1].imshow(bg)
     axes[1, 1].set_title("Background")
 
-    plot_segmentation(ref_img, fg, bg, ax=axes[1, 2])
+    blended = blend_img_segmentation(ref_img, mask)
+    axes[1, 2].imshow(blended)
     axes[1, 2].set_title("Result")
 
     # turn off axis labels
@@ -38,21 +39,44 @@ def plot_fg_bg(ref_img, mask, test_img, fg, bg, title="", axes=None):
     return axes
 
 
-def plot_segmentation(ref_img, seg, color='r', alpha=0.4, ax=None):
+def blend_img_segmentation(img, seg, color='r', alpha=0.4):
     assert(type(seg) == np.ndarray and len(seg.shape) == 2)
-    ax = plt.gca() if ax is None else ax
 
     c = (np.array(mcolors.to_rgb(color)) * 255).astype(np.uint8)
     seg3d = np.repeat(seg[:, :, np.newaxis], 3, axis=2)
     segcolor = seg3d * c
 
-    ref_img_pil = Image.fromarray(ref_img).convert("RGBA")
+    ref_img_pil = Image.fromarray(img).convert("RGBA")
     segcolor_pil = Image.fromarray(segcolor).convert("RGBA")
     blended = Image.blend(ref_img_pil, segcolor_pil, alpha=alpha)
 
-    ax.imshow(np.array(blended))
+    return np.array(blended)
 
-    return ax
+
+def plot_sequence_result(seq, segmentations, ax=None):
+    assert ((len(seq) - 1) == len(segmentations))
+
+    ax = plt.gca() if ax is None else ax
+    ax.set_title(seq.name)
+    ax.set_axis_off()
+
+    ref_img = np.array(Image.open(seq[0][0]))
+    ref_mask = np.array(Image.open(seq[0][1]))
+    blended = blend_img_segmentation(ref_img, ref_mask)
+    artist = ax.imshow(blended)
+
+    # skip first (reference) frame
+    for frame, seg in zip(seq[1:], segmentations):
+        img = Image.open(frame[0])
+        h, w = seg.shape
+        if img.size != (w, h):
+            img = img.resize((w, h), Image.ANTIALIAS)
+
+        blended = blend_img_segmentation(np.array(img), seg)
+        artist.set_data(blended)
+
+        plt.pause(0.0001)
+        plt.draw()
 
 
 def plot_dilation(mask_orig, mask_dil, title="", axes=None):

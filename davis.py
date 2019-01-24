@@ -70,7 +70,7 @@ class Davis(Dataset):
         # do the necessary transformation and possible image augmentation
         img_t, ann_t = self.transforms(img, ann)
 
-        frame = Frame(seq_idx, self.sequences[seq_idx].name, frame_idx, img_t, ann_t)
+        frame = Frame(self.sequences[seq_idx], frame_idx, img_t, ann_t)
 
         return frame
 
@@ -95,9 +95,8 @@ class Davis(Dataset):
 
 
 class Frame:
-    def __init__(self, seq_idx, seq_name, frame_idx, img_t, ann_t):
-        self.seq_idx = seq_idx
-        self.seq_name = seq_name
+    def __init__(self, seq, frame_idx, img_t, ann_t):
+        self.seq = seq
         self.frame_idx = frame_idx
         self.img_t = img_t
         self.ann_t = ann_t
@@ -122,6 +121,10 @@ class Sequence:
 
     def __getitem__(self, idx):
         return self.frames[idx]
+
+    # TODO: this compares sequences by name (string), is there a performance hit?
+    def __eq__(self, other):
+        return other is not None and self.name == other.name
 
     def __str__(self):
         return self.name

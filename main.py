@@ -2,12 +2,14 @@ import argparse
 import signal
 from time import time
 
+import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch import optim
 
 from videomatch import VideoMatch
 from davis import Davis, PairSampler, MultiFrameSampler, collate_pairs, collate_multiframes
+from visualize import plot_sequence_result
 
 
 def parse_args():
@@ -184,15 +186,43 @@ def eval_vm(data_loader, vm, visualize=True):
     # set model to eval mode
     vm.feat_net.eval()
 
-    ref_frame = None
-    prev_seq_idx = -1
+    # complex loop that calls visualization at the end of each sequence and also handles
+    # sequences with number of frames that isn't divisible with batch size
+    curr_seq = None
+    segm_list = []
+    next_seq_buff = []
     for frames in data_loader:
-        if prev_seq_idx != frames[0].seq_idx:
+        if next_seq_buff:
+            frames = next_seq_buff + frames
+            next_seq_buff = []
+
+        if curr_seq != frames[0].seq:
+            if curr_seq is not None and visualize:
+                # TODO: add outlier removal here
+                plot_sequence_result(curr_seq, segm_list)
+
+            curr_seq = frames[0].seq
             ref_frame = frames[0]
             test_frames = frames[1:]
-            prev_seq_idx = ref_frame.seq_idx
+            segm_list = []
+
+            vm.seq_init(ref_frame.img_t, ref_frame.ann_t)
+
+        # presumes that batch size is smaller than min number of frames in smallest sequence
         else:
-            test_frames = frames
+            seq_names = [f.seq.name for f in frames]
+            comp = [i for i, x in enumerate(seq_names) if curr_seq.name != x]
+            # next sequence
+            if comp:
+                next_seq_buff = frames[comp[0]:]
+                test_frames = frames[:comp[0]]
+            # same sequence
+            else:
+                test_frames = frames
+
+        test_ts = torch.stack([f.img_t for f in test_frames])
+        vm_out = vm.segment(test_ts)
+        segm_list.extend([x.data.cpu().numpy() for x in vm_out.unbind(0)])
 
 
 if __name__ == '__main__':
