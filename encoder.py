@@ -24,7 +24,7 @@ class Encoder(nn.Module):
         torch.save(self.feat_ext.state_dict(), path)
 
     def load_weights(self, path):
-        torch.load(self.feat_ext.state_dict(), path)
+        self.feat_ext.state_dict(torch.load(path))
 
     def weight_MB(self):
         """
