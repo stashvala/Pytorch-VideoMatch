@@ -161,13 +161,14 @@ if __name__ == '__main__':
     vm = VideoMatch(out_shape=ref_img.size[::-1], device="cuda:0")
     vm.seq_init(ref_tensor, mask_tensor)
 
-    # start = time()
-    # fgs, bgs = vm.predict_fg_bg(test_tensors)
-    # print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
+    start = time()
+    fgs, bgs = vm.predict_fg_bg(test_tensors)
+    print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
 
-    # for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):
-    #     plot_fg_bg(np.array(ref_img), mask, np.array(test_img), fg.data.cpu().numpy(), bg.data.cpu().numpy(), name)
-    #     plt.show()
+    for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):
+        plot_fg_bg(np.array(ref_img), mask, np.array(test_img), fg.data.cpu().numpy(),
+                   bg.data.cpu().numpy(), (fg > bg).data.cpu().numpy(), name)
+        plt.show()
 
     start = time()
     segments = vm.segment(test_tensors)

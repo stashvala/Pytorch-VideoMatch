@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
 
 
-def plot_fg_bg(ref_img, mask, test_img, fg, bg, title="", axes=None):
+def plot_fg_bg(ref_img, mask, test_img, fg, bg, test_segm, title="", axes=None):
     assert(len(fg.shape) == 2 and fg.shape == bg.shape == ref_img.shape[:2])
 
     _, axes = plt.subplots(2, 3) if axes is None else axes
@@ -29,7 +29,7 @@ def plot_fg_bg(ref_img, mask, test_img, fg, bg, title="", axes=None):
     axes[1, 1].imshow(bg)
     axes[1, 1].set_title("Background")
 
-    blended = blend_img_segmentation(ref_img, mask)
+    blended = blend_img_segmentation(ref_img, test_segm)
     axes[1, 2].imshow(blended)
     axes[1, 2].set_title("Result")
 
