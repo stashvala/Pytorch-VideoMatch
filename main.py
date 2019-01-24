@@ -38,7 +38,8 @@ def parse_args():
     parser.add_argument("--epochs", '-e', default=1, type=int,
                         help="Number of epochs to iterate through whole dataset when training (default: 1)")
     parser.add_argument("--iters", '-i', default=10000, type=int,
-                        help="Number of image pairs to iterate through when training (default: 10000)")
+                        help="Number of image pairs to iterate through when training. "
+                             "Use value -1 to use all dataset pairs (default: 10000)")
     parser.add_argument("--learning_rate", '-l', default=1e-5, type=float,
                         help="Learning rate for Adam (default: 0.00001)")
     parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
@@ -219,6 +220,10 @@ def eval_vm(data_loader, vm, visualize=True):
             # same sequence
             else:
                 test_frames = frames
+
+        # for batch_size of 1
+        if not test_frames:
+            continue
 
         test_ts = torch.stack([f.img_t for f in test_frames])
         vm_out = vm.segment(test_ts)
