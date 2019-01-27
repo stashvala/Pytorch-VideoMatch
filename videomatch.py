@@ -2,7 +2,6 @@ import torch
 from torch.nn.functional import interpolate, softmax, conv2d
 
 from encoder import Encoder
-from utils import l2_normalization
 
 
 class VideoMatch:
@@ -113,8 +112,8 @@ class VideoMatch:
         assert (X.shape[1:] == Y.shape[1:])
 
         # normalize along channels
-        Xnorm = l2_normalization(X, dim=1)
-        Ynorm = l2_normalization(Y, dim=1)
+        Xnorm = VideoMatch.l2_normalization(X, dim=1)
+        Ynorm = VideoMatch.l2_normalization(Y, dim=1)
 
         # compute pairwise similarity between all pairs of features
         return torch.einsum("xijk, bilm -> bjklm", Xnorm, Ynorm)
@@ -124,6 +123,10 @@ class VideoMatch:
         stacked = torch.stack(args)
         res = softmax(stacked, dim=-1)
         return res.unbind(0)
+
+    @staticmethod
+    def l2_normalization(X, dim, eps=1e-12):
+        return X / (torch.norm(X, p=2, dim=dim, keepdim=True) + eps)
 
     def save_model(self, path):
         self.feat_net.save_weights(path)
@@ -140,7 +143,7 @@ if __name__ == '__main__':
     from PIL import Image
     import matplotlib.pyplot as plt
 
-    from utils import preprocess
+    from preprocess import basic_img_transform, basic_ann_transform
     from visualize import plot_fg_bg, blend_img_segmentation
 
     if len(sys.argv) < 4:
@@ -148,17 +151,19 @@ if __name__ == '__main__':
                          "path to reference image, path to mask, path to test image(s). "
                          "\nI got: {}".format(sys.argv))
 
+    img_shape = 256, 456
     ref_img = Image.open(sys.argv[1])
-    ref_tensor = preprocess(ref_img)
+    ref_tensor = basic_img_transform(ref_img, img_shape)
 
-    mask = np.array(Image.open(sys.argv[2]))
-    mask_tensor = torch.from_numpy(mask)
+    mask = Image.open(sys.argv[2])
+    mask_tensor = basic_ann_transform(mask, img_shape)
 
     test_imgs = [Image.open(arg) for arg in sys.argv[3:]]
     img_names = ["/".join(arg.split("/")[-2:]) for arg in sys.argv[3:]]
-    test_tensors = preprocess(*test_imgs)
+    test_tensors = torch.stack([basic_img_transform(t, img_shape) for t in test_imgs])
 
-    vm = VideoMatch(out_shape=ref_img.size[::-1], device="cuda:0")
+    vm = VideoMatch(out_shape=img_shape, device="cuda:0")
+    vm.load_model("models/first_train.pth")
     vm.seq_init(ref_tensor, mask_tensor)
 
     start = time()
@@ -166,7 +171,7 @@ if __name__ == '__main__':
     print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
 
     for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):
-        plot_fg_bg(np.array(ref_img), mask, np.array(test_img), fg.data.cpu().numpy(),
+        plot_fg_bg(np.array(ref_img), np.array(mask), np.array(test_img), fg.data.cpu().numpy(),
                    bg.data.cpu().numpy(), (fg > bg).data.cpu().numpy(), name)
         plt.show()
 
@@ -176,6 +181,6 @@ if __name__ == '__main__':
 
     print("Segmentation for {} images with outlier detection took {:.2f} ms"
           .format(len(test_imgs), (time() - start) * 1000))
-    blended = blend_img_segmentation(np.array(ref_img), segment.data.cpu().numpy())
+    blended = blend_img_segmentation(np.array(test_imgs[0]), segment.data.cpu().numpy())
     plt.imshow(blended)
     plt.show()

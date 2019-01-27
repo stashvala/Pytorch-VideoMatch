@@ -5,7 +5,7 @@ from matplotlib import colors as mcolors
 
 
 def plot_fg_bg(ref_img, mask, test_img, fg, bg, test_segm, title="", axes=None):
-    assert(len(fg.shape) == 2 and fg.shape == bg.shape == ref_img.shape[:2])
+    assert(len(fg.shape) == len(bg.shape) == 2)
 
     _, axes = plt.subplots(2, 3) if axes is None else axes
     assert(axes.shape == (2, 3))
@@ -29,7 +29,7 @@ def plot_fg_bg(ref_img, mask, test_img, fg, bg, test_segm, title="", axes=None):
     axes[1, 1].imshow(bg)
     axes[1, 1].set_title("Background")
 
-    blended = blend_img_segmentation(ref_img, test_segm)
+    blended = blend_img_segmentation(test_img, test_segm)
     axes[1, 2].imshow(blended)
     axes[1, 2].set_title("Result")
 
@@ -41,6 +41,10 @@ def plot_fg_bg(ref_img, mask, test_img, fg, bg, test_segm, title="", axes=None):
 
 def blend_img_segmentation(img, seg, color='r', alpha=0.4):
     assert(type(seg) == np.ndarray and len(seg.shape) == 2)
+
+    if img.shape != seg.shape:
+        print("Warning: image {} and segmentation {} are not of the same shape, resizing!".format(img.shape, seg.shape))
+        img = np.array(Image.fromarray(img).resize(seg.shape[::-1], resample=Image.BILINEAR))
 
     c = (np.array(mcolors.to_rgb(color)) * 255).astype(np.uint8)
     seg3d = np.repeat(seg[:, :, np.newaxis], 3, axis=2)
@@ -69,7 +73,7 @@ def plot_sequence_result(seq, segmentations, ax=None):
     for frame, seg in zip(seq[1:], segmentations):
         img = Image.open(frame[0])
         h, w = seg.shape
-        if img.size != (w, h):
+        if img.size != (w, h):  # PIL flips h and w in .size
             img = img.resize((w, h), Image.ANTIALIAS)
 
         blended = blend_img_segmentation(np.array(img), seg)

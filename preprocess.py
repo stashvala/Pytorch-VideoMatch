@@ -8,6 +8,23 @@ import torchvision.transforms.functional as TF
 from torchvision.transforms.transforms import RandomApply
 
 
+def basic_img_transform(img, img_shape):
+    return transforms.Compose([
+        transforms.Resize(img_shape),
+        transforms.ToTensor(),  # normalizes image to 0-1 values
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])(img)
+
+
+def basic_ann_transform(ann, img_shape):
+    return transforms.Compose([
+        transforms.Resize(img_shape),
+        # convert to tensor manually, since transform.ToTensor() expects values from 0-255
+        transforms.Lambda(lambda ann: torch.from_numpy(np.array(ann)))
+    ])(ann)
+
+
 class FramePreprocessor:
 
     MAX_CROP_PERCENT = 0.70
@@ -28,23 +45,6 @@ class FramePreprocessor:
             self.aug_transform = transforms.RandomChoice(self.aug_transform_list)
         else:
             self.aug_transform = RandomAugment(self.aug_transform_list, self.probs)
-
-    @staticmethod
-    def basic_img_transform(img, img_shape):
-        return transforms.Compose([
-            transforms.Resize(img_shape),
-            transforms.ToTensor(),  # normalizes image to 0-1 values
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
-        ])(img)
-
-    @staticmethod
-    def basic_ann_transform(ann, img_shape):
-        return transforms.Compose([
-            transforms.Resize(img_shape),
-            # convert to tensor manually, since transform.ToTensor() expects values from 0-255
-            transforms.Lambda(lambda ann: torch.from_numpy(np.array(ann)))
-        ])(ann)
 
     def hflip(self, frame):
         img, ann = frame
@@ -84,8 +84,8 @@ class FramePreprocessor:
             if self.custom_transforms is not None:
                 img_t, ann_t = self.custom_transforms(img_t, ann_t)
 
-            img_t = self.basic_img_transform(img_t, self.img_shape)
-            ann_t = self.basic_ann_transform(ann_t, self.img_shape)
+            img_t = basic_img_transform(img_t, self.img_shape)
+            ann_t = basic_ann_transform(ann_t, self.img_shape)
 
             ret.append((img_t, ann_t))
 

@@ -10,7 +10,7 @@ from torch import optim
 from videomatch import VideoMatch
 from davis import Davis, PairSampler, MultiFrameSampler, collate_pairs, collate_multiframes
 from visualize import plot_sequence_result
-from preprocess import FramePreprocessor
+from preprocess import FramePreprocessor, basic_img_transform, basic_ann_transform
 
 
 def parse_args():
@@ -216,8 +216,8 @@ def eval_vm(data_loader, vm, img_shape, visualize=True):
             test_frames = frames[1:]
             segm_list = []
 
-            ref_img = FramePreprocessor.basic_img_transform(ref_frame.img, img_shape)
-            ref_mask = FramePreprocessor.basic_ann_transform(ref_frame.ann, img_shape)
+            ref_img = basic_img_transform(ref_frame.img, img_shape)
+            ref_mask = basic_ann_transform(ref_frame.ann, img_shape)
 
             vm.seq_init(ref_img, ref_mask)
 
@@ -237,7 +237,7 @@ def eval_vm(data_loader, vm, img_shape, visualize=True):
         if not test_frames:
             continue
 
-        test_imgs = [FramePreprocessor.basic_img_transform(f.img, img_shape) for f in test_frames]
+        test_imgs = [basic_img_transform(f.img, img_shape) for f in test_frames]
         test_ts = torch.stack(test_imgs)
         vm_out = vm.segment(test_ts)
         segm_list.extend([x.data.cpu().numpy() for x in vm_out.unbind(0)])
