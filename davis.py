@@ -13,7 +13,7 @@ class Davis(Dataset):
     years = '2016', '2017', 'all'
     modes = 'train', 'val', 'trainval'
 
-    def __init__(self, base_dir, year='2016', mode='train', use_seq=None, transforms=None):
+    def __init__(self, base_dir, year='2016', mode='train', use_seq=None):
         super().__init__()
 
         assert(year in self.years)
@@ -32,7 +32,6 @@ class Davis(Dataset):
 
         self.year = [year] if year in self.years[:-1] else self.years[:-1]
         self.mode = [mode] if mode in self.modes[:-1] else self.modes[:-1]
-        self.transforms = transforms if transforms is not None else self.basic_transform
 
         self.seq_names = []
         for y in self.year:
@@ -67,39 +66,17 @@ class Davis(Dataset):
         img = Image.open(img_path)
         ann = Image.open(ann_path)
 
-        # do the necessary transformation and possible image augmentation
-        img_t, ann_t = self.transforms(img, ann)
-
-        frame = Frame(self.sequences[seq_idx], frame_idx, img_t, ann_t)
+        frame = Frame(self.sequences[seq_idx], frame_idx, img, ann)
 
         return frame
 
-    @staticmethod
-    def basic_transform(img, ann):
-        from torchvision import transforms
-
-        # TODO: move this elsewhere!
-        img_transform = transforms.Compose([
-             # transforms.Resize((256, 456)),
-             transforms.ToTensor(),  # normalizes image to 0-1 values
-             transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                  std=[0.229, 0.224, 0.225])
-            ])
-
-        ann_transform = transforms.Compose([
-             # transforms.Resize((256, 456)),  # TODO: is this necessary?
-             transforms.ToTensor(),  # normalizes image to 0-1 values
-            ])
-
-        return img_transform(img), ann_transform(ann)
-
 
 class Frame:
-    def __init__(self, seq, frame_idx, img_t, ann_t):
+    def __init__(self, seq, frame_idx, img, ann):
         self.seq = seq
         self.frame_idx = frame_idx
-        self.img_t = img_t
-        self.ann_t = ann_t
+        self.img = img
+        self.ann = ann
 
 
 class Sequence:
@@ -159,7 +136,7 @@ class PairSampler(Sampler):
 def collate_pairs(data):
     ref_frame, test_frame = data
 
-    return ref_frame.img_t, ref_frame.ann_t, test_frame.img_t, test_frame.ann_t
+    return (ref_frame.img, ref_frame.ann), (test_frame.img, test_frame.ann)
 
 
 class MultiFrameSampler(Sampler):

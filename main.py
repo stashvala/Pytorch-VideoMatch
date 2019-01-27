@@ -10,6 +10,7 @@ from torch import optim
 from videomatch import VideoMatch
 from davis import Davis, PairSampler, MultiFrameSampler, collate_pairs, collate_multiframes
 from visualize import plot_sequence_result
+from preprocess import FramePreprocessor
 
 
 def parse_args():
@@ -40,6 +41,8 @@ def parse_args():
     parser.add_argument("--iters", '-i', default=10000, type=int,
                         help="Number of image pairs to iterate through when training. "
                              "Use value -1 to use all dataset pairs (default: 10000)")
+    parser.add_argument("--augment", '-a', default=True, action='store_true',
+                        help="Augment frames during training (default: True)")
     parser.add_argument("--learning_rate", '-l', default=1e-5, type=float,
                         help="Learning rate for Adam (default: 0.00001)")
     parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
@@ -79,6 +82,7 @@ def main():
     batch_size = parsed_args.batch_size
     epochs = parsed_args.epochs
     iters = parsed_args.iters
+    augment = parsed_args.augment
     lr = parsed_args.learning_rate
     weight_decay = parsed_args.weight_decay
 
@@ -108,28 +112,29 @@ def main():
     device = None if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
 
     # TODO: create class for transforms that applies equal transformation to both img and mask
-    transforms = None
-    dataset = Davis(davis_dir, year, dataset_mode, seq_names, transforms)
+    dataset = Davis(davis_dir, year, dataset_mode, seq_names)
 
     vm = VideoMatch(out_shape=seg_shape, device=device)
     if model_load_path is not None:
+        print("Loading model from path {}".format(model_load_path))
         vm.load_model(model_load_path)
 
     if mode == 'train':
         pair_sampler = PairSampler(dataset, randomize=shuffle)
         data_loader = DataLoader(dataset, batch_sampler=pair_sampler, collate_fn=collate_pairs)
         iters = len(data_loader) if iters == -1 else iters
+        fp = FramePreprocessor(img_shape, augment)
 
-        train_vm(data_loader, vm, device, lr, weight_decay, iters, epochs, loss_report_iter, model_save_path)
+        train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs, loss_report_iter, model_save_path)
     elif mode == 'eval':
         multiframe_sampler = MultiFrameSampler(dataset)
         data_loader = DataLoader(dataset, sampler=multiframe_sampler, collate_fn=collate_multiframes,
                                  batch_size=batch_size, num_workers=batch_size)
 
-        eval_vm(data_loader, vm, visualize)
+        eval_vm(data_loader, vm, img_shape, visualize)
 
 
-def train_vm(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10, model_save_path=None):
+def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10, model_save_path=None):
 
     # set model to train mode
     vm.feat_net.train()
@@ -152,13 +157,16 @@ def train_vm(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_re
         print("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
         start = time()
-        for i, (ref_img, ref_mask, test_img, test_mask) in enumerate(data_loader):
+        for i, (ref_frame, test_frame) in enumerate(data_loader):
             if i >= iters or stop_training:
                 break
 
+            # preprocess
+            (ref_img, ref_mask), (test_img, test_mask) = fp(ref_frame, test_frame)
+
             # initialize every time since reference image keeps changing
             vm.seq_init(ref_img, ref_mask)
-            out_mask = vm.segment(test_img).float()
+            out_mask = vm.segment(test_img).squeeze().float()
             out_mask.requires_grad = True
 
             test_mask = test_mask.cuda(device).float()
@@ -179,10 +187,11 @@ def train_vm(data_loader, vm, device, lr, weight_decay, iters, epochs=1, loss_re
             break
 
     if model_save_path is not None:
+        print("Saving model to path {}".format(model_save_path))
         vm.save_model(model_save_path)
 
 
-def eval_vm(data_loader, vm, visualize=True):
+def eval_vm(data_loader, vm, img_shape, visualize=True):
 
     # set model to eval mode
     vm.feat_net.eval()
@@ -207,7 +216,10 @@ def eval_vm(data_loader, vm, visualize=True):
             test_frames = frames[1:]
             segm_list = []
 
-            vm.seq_init(ref_frame.img_t, ref_frame.ann_t)
+            ref_img = FramePreprocessor.basic_img_transform(ref_frame.img, img_shape)
+            ref_mask = FramePreprocessor.basic_ann_transform(ref_frame.ann, img_shape)
+
+            vm.seq_init(ref_img, ref_mask)
 
         # presumes that batch size is smaller than min number of frames in smallest sequence
         else:
@@ -225,9 +237,14 @@ def eval_vm(data_loader, vm, visualize=True):
         if not test_frames:
             continue
 
-        test_ts = torch.stack([f.img_t for f in test_frames])
+        test_imgs = [FramePreprocessor.basic_img_transform(f.img, img_shape) for f in test_frames]
+        test_ts = torch.stack(test_imgs)
         vm_out = vm.segment(test_ts)
         segm_list.extend([x.data.cpu().numpy() for x in vm_out.unbind(0)])
+
+    # visualize for last sequence in dataset
+    if visualize:
+        plot_sequence_result(curr_seq, segm_list)
 
 
 if __name__ == '__main__':
