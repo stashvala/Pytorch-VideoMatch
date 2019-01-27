@@ -104,7 +104,7 @@ class VideoMatch:
         prev_segm_dil = self.dilate_mask(prev_segm)
         # TODO: should the squeeze be left out?
         # extrusion
-        return (prev_segm_dil * curr_segm).squeeze()
+        return (prev_segm_dil.byte() * curr_segm.byte()).squeeze()
 
     @staticmethod
     def cos_similarity(X, Y):
@@ -120,9 +120,9 @@ class VideoMatch:
 
     @staticmethod
     def softmax(*args):
-        stacked = torch.stack(args)
-        res = softmax(stacked, dim=-1)
-        return res.unbind(0)
+        stacked = torch.stack(args, dim=1)  # stack along channel dim
+        res = softmax(stacked, dim=1)  # compute softmax along channel dim
+        return res.unbind(1)
 
     @staticmethod
     def l2_normalization(X, dim, eps=1e-12):
@@ -171,13 +171,13 @@ if __name__ == '__main__':
     print("Prediction for {} images took {:.2f} ms".format(len(test_imgs), (time() - start) * 1000))
 
     for name, test_img, fg, bg in zip(img_names, test_imgs, fgs, bgs):
-        plot_fg_bg(np.array(ref_img), np.array(mask), np.array(test_img), fg.data.cpu().numpy(),
-                   bg.data.cpu().numpy(), (fg > bg).data.cpu().numpy(), name)
+        plot_fg_bg(np.array(ref_img), np.array(mask), np.array(test_img), fg.detach().cpu().numpy(),
+                   bg.detach().cpu().numpy(), (fg > bg).cpu().numpy(), name)
         plt.show()
 
     start = time()
     segments = vm.segment(test_tensors)
-    segment = vm.outlier_removal(mask_tensor, segments[0])
+    segment = vm.outlier_removal(mask_tensor, segments[0]).byte()
 
     print("Segmentation for {} images with outlier detection took {:.2f} ms"
           .format(len(test_imgs), (time() - start) * 1000))
