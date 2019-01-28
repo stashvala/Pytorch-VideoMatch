@@ -27,7 +27,7 @@ def basic_ann_transform(ann, img_shape):
     ])(ann)
 
 
-class FramePreprocessor:
+class FrameAugmentor:
 
     MAX_CROP_PERCENT = 0.70
     MIN_CROP_PERCENT = 0.95
@@ -127,7 +127,7 @@ if __name__ == '__main__':
     ref_mask = Image.open(sys.argv[2])
     img_shape = (256, 456)
 
-    fp = FramePreprocessor(img_shape, augment=True)
+    fp = FrameAugmentor(img_shape, augment=True)
 
     while True:
         img_a, mask_a = fp.aug_transform((ref_img, ref_mask))

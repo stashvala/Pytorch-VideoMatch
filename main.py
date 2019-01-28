@@ -12,7 +12,7 @@ from torch import optim
 from videomatch import VideoMatch
 from davis import Davis, PairSampler, MultiFrameSampler, collate_pairs, collate_multiframes
 from visualize import plot_sequence_result
-from preprocess import FramePreprocessor, basic_img_transform, basic_ann_transform
+from preprocess import FrameAugmentor, basic_img_transform, basic_ann_transform
 from log import init_logging, logger
 
 
@@ -127,7 +127,7 @@ def main():
         pair_sampler = PairSampler(dataset, randomize=shuffle)
         data_loader = DataLoader(dataset, batch_sampler=pair_sampler, collate_fn=collate_pairs)
         iters = len(data_loader) if iters == -1 else iters
-        fp = FramePreprocessor(img_shape, augment)
+        fp = FrameAugmentor(img_shape, augment)
 
         train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs, loss_report_iter, model_save_path)
     elif mode == 'eval':
