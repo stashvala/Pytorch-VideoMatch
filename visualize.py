@@ -3,6 +3,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
 
+from log import logger
+
 
 def plot_fg_bg(ref_img, mask, test_img, fg, bg, test_segm, title="", axes=None):
     assert(len(fg.shape) == len(bg.shape) == 2)
@@ -43,7 +45,7 @@ def blend_img_segmentation(img, seg, color='r', alpha=0.4):
     assert(type(seg) == np.ndarray and len(seg.shape) == 2)
 
     if img.shape != seg.shape:
-        print("Warning: image {} and segmentation {} are not of the same shape, resizing!".format(img.shape, seg.shape))
+        logger.warning("Image {} and segmentation {} are not of the same shape, resizing!".format(img.shape, seg.shape))
         img = np.array(Image.fromarray(img).resize(seg.shape[::-1], resample=Image.BILINEAR))
 
     c = (np.array(mcolors.to_rgb(color)) * 255).astype(np.uint8)

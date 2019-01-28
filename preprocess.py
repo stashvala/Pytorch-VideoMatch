@@ -7,6 +7,8 @@ from torchvision import transforms
 import torchvision.transforms.functional as TF
 from torchvision.transforms.transforms import RandomApply
 
+from log import logger
+
 
 def basic_img_transform(img, img_shape):
     return transforms.Compose([
@@ -55,8 +57,8 @@ class FramePreprocessor:
         w, h = img.size
         # we don't want to crop images that are smaller than expected size
         if h <= self.img_shape[0] or w <= self.img_shape[1]:
-            print("Warning: input image size {} is equal or smaller than expected output size {}, "
-                  "skipping random cropping".format((h, w), self.img_shape))
+            logger.warning("Input image size {} is equal or smaller than expected output size {}, "
+                           "skipping random cropping".format((h, w), self.img_shape))
             return img, ann
 
         # crop to random size (with same aspect ratio) by clamping it between max_crop_percent and 1.0

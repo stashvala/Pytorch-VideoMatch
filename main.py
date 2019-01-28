@@ -13,6 +13,7 @@ from videomatch import VideoMatch
 from davis import Davis, PairSampler, MultiFrameSampler, collate_pairs, collate_multiframes
 from visualize import plot_sequence_result
 from preprocess import FramePreprocessor, basic_img_transform, basic_ann_transform
+from log import init_logging, logger
 
 
 def parse_args():
@@ -59,6 +60,8 @@ def parse_args():
                         help="Report loss on every n-th iteration. Set to -1 to turn it off (default: 50)")
     parser.add_argument("--visualize", '-v', default=True, action='store_true',
                         help="Visualize results in eval mode (default: True)")
+    parser.add_argument("--logger", metavar="LEVEL", choices=['debug', 'info', 'warn', 'fatal'], default='debug',
+                        help="Choose logger output level (default: debug)")
 
     return parser.parse_args()
 
@@ -66,6 +69,7 @@ def parse_args():
 def main():
 
     parsed_args = parse_args()
+    init_logging(parsed_args.logger)
 
     # dataset related
     davis_dir = parsed_args.dataset
@@ -96,29 +100,27 @@ def main():
     loss_report_iter = parsed_args.loss_report
     visualize = parsed_args.visualize
 
-    # TODO: add logger
     # args checks
     if mode == 'train' and batch_size != 1:
-        print("Warning: Batch size > 1 is only applicable to 'eval' mode.")
+        logger.warning("Batch size > 1 is only applicable to 'eval' mode.")
 
     if iters != -1 and epochs > 1:
-        print("Warning: iters is set to {} and not to -1 (full dataset), but epoch is > 1".format(iters))
+        logger.warning("Iters is set to {} and not to -1 (full dataset), but epoch is > 1".format(iters))
 
     if mode == 'eval' and shuffle:
-        print("Warning: dataset shuffle can't be set to True in 'eval' mode, setting it to False!")
+        logger.warning("Dataset shuffle can't be set to True in 'eval' mode, setting it to False!")
         shuffle = False
 
     if mode != 'eval' and visualize:
-        print("Warning: visualize is set to True, but mode isn't 'eval'")
+        logger.warning("Visualize is set to True, but mode isn't 'eval'")
 
     device = None if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
 
-    # TODO: create class for transforms that applies equal transformation to both img and mask
     dataset = Davis(davis_dir, year, dataset_mode, seq_names)
 
     vm = VideoMatch(out_shape=seg_shape, device=device)
     if model_load_path is not None:
-        print("Loading model from path {}".format(model_load_path))
+        logger.info("Loading model from path {}".format(model_load_path))
         vm.load_model(model_load_path)
 
     if mode == 'train':
@@ -149,14 +151,14 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
 
     # save model on SIGINT (Ctrl + c)
     def sigint_handler(signal, frame):
-        print("Ctrl+c caught, stopping the training and saving the model...")
+        logger.info("Ctrl+c caught, stopping the training and saving the model...")
         nonlocal stop_training
         stop_training = True
 
     signal.signal(signal.SIGINT, sigint_handler)
 
     for epoch in range(epochs):
-        print("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
+        logger.debug("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
         avg_loss = 0.
         avg_acc = 0.
@@ -185,8 +187,8 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
 
             if i % loss_report_iter == 0 and i > 0:
                 end = time() - start
-                print("iter [{:5d}/{}]:\t avg loss =  {:.2f},\t avg accuracy = {:.2f},\t it took {:.2f} s"
-                      .format(i, iters, avg_loss / loss_report_iter, avg_acc / loss_report_iter, end))
+                logger.debug("Iter [{:5d}/{}]:\t avg loss =  {:.2f},\t avg accuracy = {:.2f},\t it took {:.2f} s"
+                             .format(i, iters, avg_loss / loss_report_iter, avg_acc / loss_report_iter, end))
                 avg_loss = 0.
                 avg_acc = 0.
                 start = time()
@@ -200,7 +202,7 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
             break
 
     if model_save_path is not None:
-        print("Saving model to path {}".format(model_save_path))
+        logger.info("Saving model to path {}".format(model_save_path))
         vm.save_model(model_save_path)
 
 

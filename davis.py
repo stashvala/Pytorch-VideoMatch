@@ -7,6 +7,8 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
 
+from log import logger
+
 
 class Davis(Dataset):
 
@@ -54,6 +56,8 @@ class Davis(Dataset):
             self.seq_names = use_seq & self.seq_names
 
         self.sequences = [Sequence(name, self._annotations_dir, self._images_dir) for name in sorted(self.seq_names)]
+
+        logger.debug("Number of specified sequences in davis dataset is {}".format(self.__len__()))
 
     def __len__(self):
         return len(self.sequences)
@@ -125,6 +129,8 @@ class PairSampler(Sampler):
         if self._randomize:
             shuffle(self._all_pairs)
 
+        logger.debug("Number of all pairs".format(self.__len__()))
+
     def __iter__(self):
         for pair_idx in self._all_pairs:
             yield pair_idx
@@ -166,10 +172,9 @@ if __name__ == '__main__':
     davis = Davis("./DAVIS")
 
     ps = PairSampler(davis)
-    print("Number of pairs in pair sampler = ", len(ps))
 
     ps = iter(ps)
-    pair_idx = next(ps)
-    first_pair = davis[pair_idx[0]], davis[pair_idx[1]]
+    pair_i = next(ps)
+    first_pair = davis[pair_i[0]], davis[pair_i[1]]
     print("First frames shapes = ", first_pair[0][0].shape, first_pair[0][1].shape)
     print("Second frames shapes = ", first_pair[1][0].shape, first_pair[1][1].shape)
