@@ -2,6 +2,8 @@ import argparse
 import signal
 from time import time
 
+import numpy as np
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -97,7 +99,7 @@ def main():
     # TODO: add logger
     # args checks
     if mode == 'train' and batch_size != 1:
-        print("Warning: Batch size > 1 is only applicable to 'val' mode.")
+        print("Warning: Batch size > 1 is only applicable to 'eval' mode.")
 
     if iters != -1 and epochs > 1:
         print("Warning: iters is set to {} and not to -1 (full dataset), but epoch is > 1".format(iters))
@@ -156,6 +158,8 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
     for epoch in range(epochs):
         print("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
+        avg_loss = 0.
+        avg_acc = 0.
         start = time()
         for i, (ref_frame, test_frame) in enumerate(data_loader):
             if i >= iters or stop_training:
@@ -163,19 +167,28 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
 
             # preprocess
             (ref_img, ref_mask), (test_img, test_mask) = fp(ref_frame, test_frame)
+            test_mask = test_mask.unsqueeze(0).cuda(device).float()
 
             # initialize every time since reference image keeps changing
             vm.seq_init(ref_img, ref_mask)
-            out_mask = vm.segment(test_img).squeeze().float()
-            out_mask.requires_grad = True
 
-            test_mask = test_mask.cuda(device).float()
+            # Use softmaxed foreground probability and groundtruth to compute BCE loss
+            fg_prob, _ = vm.predict_fg_bg(test_img)
 
-            loss = criterion(input=out_mask, target=test_mask)
+            loss = criterion(input=fg_prob, target=test_mask)
+            avg_loss += loss.data.mean()
+
+            ref_arr = ref_mask.cpu().numpy()
+            test_arr = test_mask.cpu().numpy()
+            comp_arr = ref_arr == test_arr
+            avg_acc += np.sum(comp_arr) / comp_arr.size
 
             if i % loss_report_iter == 0 and i > 0:
                 end = time() - start
-                print("Loss for iter [{:5d}/{}]:\t {:.2f}, \t it took {:.2f} s".format(i, iters, loss.data.mean(), end))
+                print("iter [{:5d}/{}]:\t avg loss =  {:.2f},\t avg accuracy = {:.2f},\t it took {:.2f} s"
+                      .format(i, iters, avg_loss / loss_report_iter, avg_acc / loss_report_iter, end))
+                avg_loss = 0.
+                avg_acc = 0.
                 start = time()
 
             # backpropagation

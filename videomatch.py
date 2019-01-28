@@ -78,10 +78,10 @@ class VideoMatch:
 
         return fg_prob, bg_prob
 
-    def segment(self, test_t):
+    def segment(self, test_t, thresh=0.5):
         fgs, bgs = self.predict_fg_bg(test_t)
 
-        return fgs > bgs
+        return fgs > thresh
 
     def dilate_mask(self, mask_t):
         assert(self.d % 2 != 0)
@@ -163,7 +163,6 @@ if __name__ == '__main__':
     test_tensors = torch.stack([basic_img_transform(t, img_shape) for t in test_imgs])
 
     vm = VideoMatch(out_shape=img_shape, device="cuda:0")
-    vm.load_model("models/first_train.pth")
     vm.seq_init(ref_tensor, mask_tensor)
 
     start = time()
