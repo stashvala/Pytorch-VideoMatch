@@ -129,7 +129,7 @@ class PairSampler(Sampler):
         if self._randomize:
             shuffle(self._all_pairs)
 
-        logger.debug("Number of all pairs".format(self.__len__()))
+        logger.debug("Number of all pairs {}".format(self.__len__()))
 
     def __iter__(self):
         for pair_idx in self._all_pairs:

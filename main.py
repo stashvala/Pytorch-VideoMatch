@@ -28,7 +28,8 @@ def parse_args():
     parser.add_argument("--sequences", '-q', metavar="SEQ_NAME", nargs='+',
                         help="List of sequence names to include in the dataset. "
                              "Don't use this flag to choose all. (default: None)")
-    parser.add_argument("--shuffle", '-u', default=True, action='store_true', help="Shuffle dataset (default: True)")
+    parser.add_argument("--no-shuffle", '-u', default=False, action='store_true',
+                        help="Don't shuffle the dataset (default: False)")
 
     parser.add_argument("--mode", '-m', default='train', choices=['train', 'eval'], type=str,
                         help="Model train or evaluation/test mode (default: train)")
@@ -44,23 +45,23 @@ def parse_args():
     parser.add_argument("--iters", '-i', default=10000, type=int,
                         help="Number of image pairs to iterate through when training. "
                              "Use value -1 to use all dataset pairs (default: 10000)")
-    parser.add_argument("--augment", '-a', default=True, action='store_true',
-                        help="Augment frames during training (default: True)")
+    parser.add_argument("--no-augment", '-a', default=False, action='store_true',
+                        help="Don't augment frames during training (default: False)")
     parser.add_argument("--learning_rate", '-l', default=1e-5, type=float,
                         help="Learning rate for Adam (default: 0.00001)")
     parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
                         help="Weight decay for Adam (default: 0.0005)")
 
-    parser.add_argument("--input_image_shape", metavar=('HEIGHT', 'WIDTH'), default=(256, 456), nargs=2, type=int,
+    parser.add_argument("--input_image_shape", '-p', metavar=('HEIGHT', 'WIDTH'), default=(256, 456), nargs=2, type=int,
                         help="Input image shape (default: 256 456)")
     parser.add_argument("--segmentation_shape", '-g', metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
                         help="Segmentation output shape (default: input image size)")
 
     parser.add_argument("--loss_report", '-r', metavar='ITER', default=50, type=int,
                         help="Report loss on every n-th iteration. Set to -1 to turn it off (default: 50)")
-    parser.add_argument("--visualize", '-v', default=True, action='store_true',
-                        help="Visualize results in eval mode (default: True)")
-    parser.add_argument("--logger", metavar="LEVEL", choices=['debug', 'info', 'warn', 'fatal'], default='debug',
+    parser.add_argument("--visualize", '-v', default=False, action='store_true',
+                        help="Visualize results in eval mode (default: False)")
+    parser.add_argument("--logger", '-f', metavar="LEVEL", choices=['debug', 'info', 'warn', 'fatal'], default='debug',
                         help="Choose logger output level (default: debug)")
 
     return parser.parse_args()
@@ -76,7 +77,7 @@ def main():
     year = parsed_args.year
     dataset_mode = parsed_args.set
     seq_names = parsed_args.sequences
-    shuffle = parsed_args.shuffle
+    shuffle = not parsed_args.no_shuffle
 
     # model related
     mode = parsed_args.mode
@@ -88,7 +89,7 @@ def main():
     batch_size = parsed_args.batch_size
     epochs = parsed_args.epochs
     iters = parsed_args.iters
-    augment = parsed_args.augment
+    augment = not parsed_args.no_augment
     lr = parsed_args.learning_rate
     weight_decay = parsed_args.weight_decay
 
@@ -110,6 +111,9 @@ def main():
     if mode == 'eval' and shuffle:
         logger.warning("Dataset shuffle can't be set to True in 'eval' mode, setting it to False!")
         shuffle = False
+    if mode == 'train' and not shuffle:
+        logger.warning("Dataset shuffle is off, consider turning it on when training, "
+                       "to avoid overfitting on starting sequences")
 
     if mode != 'eval' and visualize:
         logger.warning("Visualize is set to True, but mode isn't 'eval'")

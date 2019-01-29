@@ -29,10 +29,10 @@ def basic_ann_transform(ann, img_shape):
 
 class FrameAugmentor:
 
-    MAX_CROP_PERCENT = 0.70
+    MAX_CROP_PERCENT = 0.85
     MIN_CROP_PERCENT = 0.95
-    MAX_SCALE = 1.15
-    MIN_SCALE = 0.85
+    MAX_SCALE = 1.10
+    MIN_SCALE = 0.90
 
     def __init__(self, img_shape, augment=True, aug_oneof=False, aug_probs=0.5, custom_transforms=None):
         self.augment = augment
@@ -42,6 +42,12 @@ class FrameAugmentor:
         self.custom_transforms = custom_transforms
 
         self.aug_transform_list = [self.hflip, self.random_crop, self.random_scale]
+
+        if self.augment:
+            logger.debug("Using image augmentation with the following transformations: {}"
+                         .format([f.__name__ for f in self.aug_transform_list]))
+        else:
+            logger.debug("No image augmentation will be used, only basic preprocessing for image and annotation")
 
         if self.one_of:
             self.aug_transform = transforms.RandomChoice(self.aug_transform_list)
@@ -80,7 +86,7 @@ class FrameAugmentor:
         ret = []
         for f in frames:
             img_t, ann_t = f
-            if self.augment is not None:
+            if self.augment:
                 img_t, ann_t = self.aug_transform((img_t, ann_t))
 
             if self.custom_transforms is not None:
