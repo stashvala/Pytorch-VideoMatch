@@ -23,7 +23,9 @@ def basic_ann_transform(ann, img_shape):
     return transforms.Compose([
         transforms.Resize(img_shape),
         # convert to tensor manually, since transform.ToTensor() expects values from 0-255
-        transforms.Lambda(lambda ann: torch.from_numpy(np.array(ann)))
+        transforms.Lambda(lambda ann: torch.from_numpy(np.array(ann))),
+        # TODO: only single object detection for now
+        transforms.Lambda(lambda t: t >= 1)
     ])(ann)
 
 
