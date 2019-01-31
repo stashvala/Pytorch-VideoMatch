@@ -101,3 +101,24 @@ def plot_dilation(mask_orig, mask_dil, title="", axes=None):
     axes[1].set_title("Dilated")
 
     return axes
+
+
+def plot_loss(loss_list, bins=100, clip_max=1.0, ax=None):
+    if bins == 0:
+        loss_bins = loss_list
+    else:
+        loss_bins = []
+        loss_tmp = []
+        for i, l in enumerate(loss_list):
+            loss_tmp.append(l)
+            if (i + 1) % bins == 0:
+                running_loss_avg = min(sum(loss_tmp) / len(loss_tmp), clip_max)
+                loss_bins.append(running_loss_avg)
+                loss_tmp = []
+
+    ax = plt.gca() if ax is None else ax
+    ax.set_title('Loss plot (bins = {})'.format(bins))
+
+    ax.plot(loss_bins)
+
+    return ax

@@ -3,6 +3,7 @@ import signal
 from time import time
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 from torch import nn
@@ -11,7 +12,7 @@ from torch import optim
 
 from videomatch import VideoMatch
 from davis import Davis, PairSampler, MultiFrameSampler, collate_pairs, collate_multiframes
-from visualize import plot_sequence_result
+from visualize import plot_sequence_result, plot_loss
 from preprocess import FrameAugmentor, basic_img_transform, basic_ann_transform
 from log import init_logging, logger
 
@@ -63,6 +64,8 @@ def parse_args():
                         help="Visualize results in eval mode (default: False)")
     parser.add_argument("--logger", '-f', metavar="LEVEL", choices=['debug', 'info', 'warn', 'fatal'], default='debug',
                         help="Choose logger output level (default: debug)")
+    parser.add_argument("--loss_visualization", '-x', default=False, action='store_true',
+                        help="Plot binary cross entropy loss when finished training (default: False)")
 
     return parser.parse_args()
 
@@ -100,6 +103,7 @@ def main():
     # misc
     loss_report_iter = parsed_args.loss_report
     visualize = parsed_args.visualize
+    loss_visualize = parsed_args.loss_visualization
 
     # args checks
     if mode == 'train' and batch_size != 1:
@@ -133,7 +137,9 @@ def main():
         iters = len(data_loader) if iters == -1 else iters
         fp = FrameAugmentor(img_shape, augment)
 
-        train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs, loss_report_iter, model_save_path)
+        train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs,
+                 loss_report_iter, model_save_path, loss_visualize)
+
     elif mode == 'eval':
         multiframe_sampler = MultiFrameSampler(dataset)
         data_loader = DataLoader(dataset, sampler=multiframe_sampler, collate_fn=collate_multiframes,
@@ -142,7 +148,8 @@ def main():
         eval_vm(data_loader, vm, img_shape, visualize)
 
 
-def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, loss_report_iter=10, model_save_path=None):
+def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
+             loss_report_iter=10, model_save_path=None, loss_visualize=False):
 
     # set model to train mode
     vm.feat_net.train()
@@ -161,6 +168,7 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
 
     signal.signal(signal.SIGINT, sigint_handler)
 
+    loss_list = []
     for epoch in range(epochs):
         logger.debug("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
@@ -182,7 +190,7 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
             fg_prob, _ = vm.predict_fg_bg(test_img)
 
             loss = criterion(input=fg_prob, target=test_mask)
-            avg_loss += loss.data.mean()
+            avg_loss += loss.data.mean().cpu().numpy()
 
             ref_arr = ref_mask.cpu().numpy()
             test_arr = test_mask.cpu().numpy()
@@ -191,8 +199,9 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
 
             if i % loss_report_iter == 0 and i > 0:
                 end = time() - start
-                logger.debug("Iter [{:5d}/{}]:\t avg loss =  {:.2f},\t avg accuracy = {:.2f},\t it took {:.2f} s"
+                logger.debug("Iter [{:5d}/{}]:\t avg loss =  {:.4f},\t avg accuracy = {:.2f},\t it took {:.2f} s"
                              .format(i, iters, avg_loss / loss_report_iter, avg_acc / loss_report_iter, end))
+                loss_list.append(avg_loss / loss_report_iter)
                 avg_loss = 0.
                 avg_acc = 0.
                 start = time()
@@ -208,6 +217,14 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1, los
     if model_save_path is not None:
         logger.info("Saving model to path {}".format(model_save_path))
         vm.save_model(model_save_path)
+
+    if loss_visualize:
+        if not loss_list:
+            logger.info("Loss list is empty, omitting loss visualization!")
+        else:
+            bins = 0 if len(loss_list) < 500 else 100
+            plot_loss(loss_list, bins=bins)
+            plt.show()
 
 
 def eval_vm(data_loader, vm, img_shape, visualize=True):
