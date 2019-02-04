@@ -56,7 +56,9 @@ class VideoMatch:
     def soft_match(self, test_t):
 
         test_feats = self.extract_features(test_t)
-        sim_mat = self.cos_similarity(self.ref_feat, test_feats)
+        sim_mat = self.cos_similarity(test_feats, self.ref_feat)
+        # sanity check
+        assert(sim_mat.shape[0] == test_feats.shape[0])
         h, w = sim_mat.shape[-2:]
 
         sim_fg, _ = torch.topk((sim_mat * self.mask_fg).view(-1, h, w, h * w), k=self.k)
@@ -108,7 +110,7 @@ class VideoMatch:
 
     @staticmethod
     def cos_similarity(X, Y):
-        assert (X.shape[0] == 1)
+        assert (Y.shape[0] == 1)  # TODO: batch cossim for ref
         assert (X.shape[1:] == Y.shape[1:])
 
         # normalize along channels
@@ -116,7 +118,9 @@ class VideoMatch:
         Ynorm = VideoMatch.l2_normalization(Y, dim=1)
 
         # compute pairwise similarity between all pairs of features
-        return torch.einsum("xijk, bilm -> bjklm", Xnorm, Ynorm)
+        # TODO: Batch is broadcastable dimension so we can use 'x' instead of 'b' for now to avoid an error,
+        # see https://github.com/pytorch/pytorch/issues/15671
+        return torch.einsum("bijk, xilm -> bjklm", Xnorm, Ynorm)
 
     @staticmethod
     def softmax(*args):
