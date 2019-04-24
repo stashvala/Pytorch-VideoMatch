@@ -1,6 +1,8 @@
 import argparse
 import signal
 from time import time
+from os.path import isdir
+from os import mkdir
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -62,6 +64,8 @@ def parse_args():
                         help="Report loss on every n-th iteration. Set to -1 to turn it off (default: 50)")
     parser.add_argument("--visualize", '-v', default=False, action='store_true',
                         help="Visualize results in eval mode (default: False)")
+    parser.add_argument("--results_dir", '-j',
+                        help="Save segmented videosequences to folder. Visualization flag (-v) required!")
     parser.add_argument("--logger", '-f', metavar="LEVEL", choices=['debug', 'info', 'warn', 'fatal'], default='debug',
                         help="Choose logger output level (default: debug)")
     parser.add_argument("--loss_visualization", '-x', default=False, action='store_true',
@@ -103,6 +107,7 @@ def main():
     # misc
     loss_report_iter = parsed_args.loss_report
     visualize = parsed_args.visualize
+    results_dir = parsed_args.results_dir
     loss_visualize = parsed_args.loss_visualization
 
     # args checks
@@ -145,7 +150,10 @@ def main():
         data_loader = DataLoader(dataset, sampler=multiframe_sampler, collate_fn=collate_multiframes,
                                  batch_size=batch_size, num_workers=batch_size)
 
-        eval_vm(data_loader, vm, img_shape, visualize)
+        if not isdir(results_dir):
+            mkdir(results_dir)
+
+        eval_vm(data_loader, vm, img_shape, visualize, results_dir)
 
 
 def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
@@ -227,7 +235,7 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
             plt.show()
 
 
-def eval_vm(data_loader, vm, img_shape, visualize=True):
+def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
 
     # set model to eval mode
     vm.feat_net.eval()
@@ -245,7 +253,10 @@ def eval_vm(data_loader, vm, img_shape, visualize=True):
         if curr_seq != frames[0].seq:
             if curr_seq is not None and visualize:
                 # TODO: add outlier removal here
-                plot_sequence_result(curr_seq, segm_list)
+                out_file = None
+                if results_dir is not None:
+                    out_file = "{}/{}.mp4".format(results_dir, curr_seq.name)
+                plot_sequence_result(curr_seq, segm_list, out_file=out_file)
 
             curr_seq = frames[0].seq
             ref_frame = frames[0]

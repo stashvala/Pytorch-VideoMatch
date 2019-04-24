@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
+from matplotlib import animation
 
 from log import logger
 
@@ -44,7 +45,7 @@ def plot_fg_bg(ref_img, mask, test_img, fg, bg, test_segm, title="", axes=None):
 def blend_img_segmentation(img, seg, color='r', alpha=0.4):
     assert(type(seg) == np.ndarray and len(seg.shape) == 2)
 
-    if img.shape != seg.shape:
+    if img.shape[:2] != seg.shape:
         logger.warning("Image {} and segmentation {} are not of the same shape, resizing!".format(img.shape, seg.shape))
         img = np.array(Image.fromarray(img).resize(seg.shape[::-1], resample=Image.BILINEAR))
 
@@ -59,30 +60,41 @@ def blend_img_segmentation(img, seg, color='r', alpha=0.4):
     return np.array(blended)
 
 
-def plot_sequence_result(seq, segmentations, ax=None):
+def plot_sequence_result(seq, segmentations, out_file=None, fig=None):
     assert ((len(seq) - 1) == len(segmentations))
 
-    ax = plt.gca() if ax is None else ax
+    fig = plt.figure() if fig is None else fig
+    ax = plt.gca()
     ax.set_title(seq.name)
     ax.set_axis_off()
 
     ref_img = np.array(Image.open(seq[0][0]))
     ref_mask = np.array(Image.open(seq[0][1]))
     blended = blend_img_segmentation(ref_img, ref_mask)
-    artist = ax.imshow(blended)
+    img_artist = plt.imshow(blended, animated=True)
 
-    # skip first (reference) frame
-    for frame, seg in zip(seq[1:], segmentations):
-        img = Image.open(frame[0])
+    def animate(frame):
+        nonlocal img_artist
+        img, seg = Image.open(frame[0][0]), frame[1]
         h, w = seg.shape
         if img.size != (w, h):  # PIL flips h and w in .size
             img = img.resize((w, h), Image.ANTIALIAS)
 
         blended = blend_img_segmentation(np.array(img), seg)
-        artist.set_data(blended)
+        img_artist.set_array(blended)
+        return img_artist,
 
-        plt.pause(0.0001)
-        plt.draw()
+    anim = animation.FuncAnimation(fig, animate, frames=list(zip(seq[1:], segmentations)),
+                                   interval=50, blit=True, repeat=False)
+
+    if out_file is not None:
+        writer = "imagemagick" if out_file.endswith('.jpg') else "ffmpeg"
+        anim.save(out_file, writer=writer)
+        logger.debug("Result video sequence saved to {}".format(out_file))
+
+    # TODO: for now you have to close figure manually to continue with the program, find solution!
+    plt.show()
+    logger.debug("Finished plotting sequence {}".format(seq.name))
 
 
 def plot_dilation(mask_orig, mask_dil, title="", axes=None):
