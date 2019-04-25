@@ -127,6 +127,9 @@ def main():
     if mode != 'eval' and visualize:
         logger.warning("Visualize is set to True, but mode isn't 'eval'")
 
+    if results_dir is not None and not visualize:
+        logger.warning("Visualization has to be enabled to save the results")
+
     device = None if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
 
     dataset = Davis(davis_dir, year, dataset_mode, seq_names)
@@ -252,11 +255,7 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
 
         if curr_seq != frames[0].seq:
             if curr_seq is not None and visualize:
-                # TODO: add outlier removal here
-                out_file = None
-                if results_dir is not None:
-                    out_file = "{}/{}.mp4".format(results_dir, curr_seq.name)
-                plot_sequence_result(curr_seq, segm_list, out_file=out_file)
+                process_results(curr_seq, segm_list, results_dir)
 
             curr_seq = frames[0].seq
             ref_frame = frames[0]
@@ -291,7 +290,12 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
 
     # visualize for last sequence in dataset
     if visualize:
-        plot_sequence_result(curr_seq, segm_list)
+        process_results(curr_seq, segm_list, results_dir)
+
+
+def process_results(curr_seq, segm_list, results_dir=None):
+    out_file = None if results_dir is None else "{}/{}.mp4".format(results_dir, curr_seq.name)
+    plot_sequence_result(curr_seq, segm_list, out_file=out_file)
 
 
 if __name__ == '__main__':
