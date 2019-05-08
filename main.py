@@ -200,10 +200,9 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
             loss = criterion(input=fg_prob, target=test_mask)
             avg_loss += loss.data.mean().cpu().numpy()
 
-            ref_arr = ref_mask.cpu().numpy()
-            test_arr = test_mask.cpu().numpy()
-            comp_arr = ref_arr == test_arr
-            avg_acc += np.sum(comp_arr) / comp_arr.size
+            # TODO: should the size of segmentation also affect accuracy?
+            comp_arr = (fg_prob >= 0.5) == test_mask.byte()
+            avg_acc += torch.sum(comp_arr).cpu().numpy() / (comp_arr.shape[1] * comp_arr.shape[2])
 
             if i % loss_report_iter == 0 and i > 0:
                 end = time() - start
