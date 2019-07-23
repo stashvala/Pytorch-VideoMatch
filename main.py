@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch import optim
 
 from videomatch import VideoMatch
@@ -54,14 +54,15 @@ def parse_args():
                         help="Learning rate for Adam (default: 0.00001)")
     parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
                         help="Weight decay for Adam (default: 0.0005)")
+    parser.add_argument("--validation_size", default=0.0025, type=float, help="Validation set size (default: 0.0025)")
 
     parser.add_argument("--input_image_shape", '-p', metavar=('HEIGHT', 'WIDTH'), default=(256, 456), nargs=2, type=int,
                         help="Input image shape (default: 256 456)")
     parser.add_argument("--segmentation_shape", '-g', metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
                         help="Segmentation output shape (default: input image size)")
 
-    parser.add_argument("--loss_report", '-r', metavar='ITER', default=50, type=int,
-                        help="Report loss on every n-th iteration. Set to -1 to turn it off (default: 50)")
+    parser.add_argument("--val_report", '-r', metavar='ITER', default=50, type=int,
+                        help="Report validation score on every n-th iteration. Set to -1 to turn it off (default: 50)")
     parser.add_argument("--visualize", '-v', default=False, action='store_true',
                         help="Visualize results in eval mode (default: False)")
     parser.add_argument("--results_dir", '-j',
@@ -99,13 +100,14 @@ def main():
     augment = not parsed_args.no_augment
     lr = parsed_args.learning_rate
     weight_decay = parsed_args.weight_decay
+    validation_size = parsed_args.validation_size
 
     # videomatch related
     img_shape = parsed_args.input_image_shape
     seg_shape = parsed_args.segmentation_shape
 
     # misc
-    loss_report_iter = parsed_args.loss_report
+    val_report_iter = parsed_args.val_report
     visualize = parsed_args.visualize
     results_dir = parsed_args.results_dir
     loss_visualize = parsed_args.loss_visualization
@@ -141,12 +143,25 @@ def main():
 
     if mode == 'train':
         pair_sampler = PairSampler(dataset, randomize=shuffle)
-        data_loader = DataLoader(dataset, batch_sampler=pair_sampler, collate_fn=collate_pairs)
-        iters = len(data_loader) if iters == -1 else iters
+        indices = np.arange(len(pair_sampler))
+        if shuffle:
+            np.random.shuffle(indices)
+
+        split = int(np.floor(validation_size * len(pair_sampler)))
+        val_indices = indices[:split]
+        train_indices = indices[split:]
+        train_loader = DataLoader(dataset, batch_sampler=SubsetRandomSampler(pair_sampler.get_indexes(train_indices)),
+                                  collate_fn=collate_pairs)
+        val_loader = DataLoader(dataset, batch_sampler=SubsetRandomSampler(pair_sampler.get_indexes(val_indices)),
+                                collate_fn=collate_pairs)
+
+        logger.debug("Train set size: {}, Validation set size: {}".format(len(pair_sampler) - split, split))
+
+        iters = len(train_loader) if iters == -1 else iters
         fp = FrameAugmentor(img_shape, augment)
 
-        train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs,
-                 loss_report_iter, model_save_path, loss_visualize)
+        train_vm(train_loader, val_loader, vm, fp, device, lr, weight_decay, iters, epochs,
+                 val_report_iter, model_save_path, loss_visualize)
 
     elif mode == 'eval':
         multiframe_sampler = MultiFrameSampler(dataset)
@@ -159,13 +174,15 @@ def main():
         eval_vm(data_loader, vm, img_shape, visualize, results_dir)
 
 
-def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
-             loss_report_iter=10, model_save_path=None, loss_visualize=False):
+def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
+             val_report_iter=10, model_save_path=None, loss_visualize=False):
 
     # set model to train mode
     vm.feat_net.train()
 
-    params = filter(lambda p: p.requires_grad, vm.feat_net.parameters())
+    params = list(filter(lambda p: p.requires_grad, vm.feat_net.parameters()))
+    logger.debug("Number of trainable parameters in VideoMatch: {}".format(len(params)))
+
     optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
     criterion = nn.BCELoss()
 
@@ -179,13 +196,23 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
 
     signal.signal(signal.SIGINT, sigint_handler)
 
+    # check videomatch avg val accuracy
+    vm_avg_val_acc = 0.
+    for val_ref_frame, val_test_frame in val_loader:
+        (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
+
+        vm.seq_init(ref_img, ref_mask)
+        fg_prob, _ = vm.predict_fg_bg(test_img)
+        vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
+
+    logger.debug("Untrained Videomatch average accuracy on validation set: {:.3f}".format(vm_avg_val_acc / len(val_loader)))
+
     loss_list = []
     for epoch in range(epochs):
         logger.debug("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
         avg_loss = 0.
         avg_acc = 0.
-        start = time()
         for i, (ref_frame, test_frame) in enumerate(data_loader):
             if i >= iters or stop_training:
                 break
@@ -207,14 +234,22 @@ def train_vm(data_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
             comp_arr = (fg_prob >= 0.5) == test_mask.byte()
             avg_acc += torch.sum(comp_arr).cpu().numpy() / (comp_arr.shape[1] * comp_arr.shape[2])
 
-            if i % loss_report_iter == 0 and i > 0:
-                end = time() - start
-                logger.debug("Iter [{:5d}/{}]:\t avg loss =  {:.4f},\t avg accuracy = {:.2f},\t it took {:.2f} s"
-                             .format(i, iters, avg_loss / loss_report_iter, avg_acc / loss_report_iter, end))
-                loss_list.append(avg_loss / loss_report_iter)
+            if ((i + 1) % val_report_iter == 0 or i + 1 == iters) and i > 0:
+                mm_avg_val_acc, vm_avg_val_acc = 0., 0.
+                val_cnt = 0
+                for val_ref_frame, val_test_frame in val_loader:
+                    (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
+
+                    vm.seq_init(ref_img, ref_mask)
+                    fg_prob, _ = vm.predict_fg_bg(test_img)
+                    mm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
+                    val_cnt += 1
+
+                logger.debug("Iter [{:5d}/{}]:\tavg loss = {:.4f},\tavg val acc = {:.3f}"
+                             .format(i + 1, iters, avg_loss / val_report_iter, mm_avg_val_acc / val_cnt))
+
+                loss_list.append(avg_loss / val_report_iter)
                 avg_loss = 0.
-                avg_acc = 0.
-                start = time()
 
             # backpropagation
             optimizer.zero_grad()
@@ -295,6 +330,17 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
 def process_results(curr_seq, segm_list, results_dir=None):
     out_file = None if results_dir is None else "{}/{}.mp4".format(results_dir, curr_seq.name)
     plot_sequence_result(curr_seq, segm_list, out_file=out_file)
+
+
+def segmentation_accuracy(mask_pred, mask_true, fg_thresh=0.5):
+    # check same height and width
+    assert mask_pred.shape[-2:] == mask_true.shape[-2:]
+
+    # TODO: should the size of segmentation also affect accuracy?
+    comp_arr = (mask_pred >= fg_thresh) == mask_true.byte()
+    acc = torch.sum(comp_arr).cpu().numpy() / (comp_arr.shape[-1] * comp_arr.shape[-2])
+
+    return acc
 
 
 if __name__ == '__main__':

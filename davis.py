@@ -3,6 +3,7 @@ from random import shuffle
 from itertools import combinations
 
 from PIL import Image
+import numpy as np
 
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
@@ -130,6 +131,9 @@ class PairSampler(Sampler):
             shuffle(self._all_pairs)
 
         logger.debug("Number of all pairs {}".format(self.__len__()))
+
+    def get_indexes(self, index_list):
+        return np.array(self._all_pairs)[index_list].tolist()
 
     def __iter__(self):
         for pair_idx in self._all_pairs:
