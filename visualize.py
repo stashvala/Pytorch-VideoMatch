@@ -115,22 +115,35 @@ def plot_dilation(mask_orig, mask_dil, title="", axes=None):
     return axes
 
 
-def plot_loss(loss_list, bins=100, clip_max=1.0, ax=None):
+def plot_loss(loss_list, val_acc_list, report_iters, bins=100, clip_max=1.0, ax=None):
     if bins == 0:
-        loss_bins = loss_list
+        loss_bins, val_bins = loss_list, val_acc_list
     else:
-        loss_bins = []
-        loss_tmp = []
-        for i, l in enumerate(loss_list):
+        loss_bins, val_bins = [], []
+        loss_tmp, val_tmp = [], []
+        for i, (l, v) in enumerate(zip(loss_list, val_acc_list)):
             loss_tmp.append(l)
+            val_tmp.append(v)
             if (i + 1) % bins == 0:
                 running_loss_avg = min(sum(loss_tmp) / len(loss_tmp), clip_max)
+                running_valacc_avg = min(sum(val_tmp) / len(val_tmp), clip_max)
                 loss_bins.append(running_loss_avg)
-                loss_tmp = []
+                val_bins.append(running_valacc_avg)
+                loss_tmp, val_tmp = [], []
 
-    ax = plt.gca() if ax is None else ax
-    ax.set_title('Loss plot (bins = {})'.format(bins))
+    ax1 = plt.gca() if ax is None else ax
 
-    ax.plot(loss_bins)
+    ax2 = ax1.twinx()
+
+    x_iters = np.arange(report_iters, (len(loss_bins) + 1) * report_iters, report_iters)
+    ax1.plot(x_iters, loss_bins, 'b', label='BCE')
+    ax2.plot(x_iters, val_bins, 'r', label='Val_acc')
+
+    ax1.set_xlabel('Število iteracij')
+    ax1.set_ylabel('Vrednost kriterijske funkcije', color='b')
+    ax2.set_ylabel('Klas. točnost na val. množici', color='r')
+
+    # save fig because of weird crop
+    plt.savefig("vmfinetuningloss.png", bbox_inches='tight')
 
     return ax

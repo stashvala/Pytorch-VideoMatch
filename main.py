@@ -208,6 +208,7 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
     logger.debug("Untrained Videomatch average accuracy on validation set: {:.3f}".format(vm_avg_val_acc / len(val_loader)))
 
     loss_list = []
+    val_acc_list = []
     for epoch in range(epochs):
         logger.debug("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
@@ -235,19 +236,20 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             avg_acc += torch.sum(comp_arr).cpu().numpy() / (comp_arr.shape[1] * comp_arr.shape[2])
 
             if ((i + 1) % val_report_iter == 0 or i + 1 == iters) and i > 0:
-                mm_avg_val_acc, vm_avg_val_acc = 0., 0.
+                vm_avg_val_acc = 0.
                 val_cnt = 0
                 for val_ref_frame, val_test_frame in val_loader:
                     (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
 
                     vm.seq_init(ref_img, ref_mask)
                     fg_prob, _ = vm.predict_fg_bg(test_img)
-                    mm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
+                    vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
                     val_cnt += 1
 
                 logger.debug("Iter [{:5d}/{}]:\tavg loss = {:.4f},\tavg val acc = {:.3f}"
-                             .format(i + 1, iters, avg_loss / val_report_iter, mm_avg_val_acc / val_cnt))
+                             .format(i + 1, iters, avg_loss / val_report_iter, vm_avg_val_acc / val_cnt))
 
+                val_acc_list.append(vm_avg_val_acc / val_cnt)
                 loss_list.append(avg_loss / val_report_iter)
                 avg_loss = 0.
 
@@ -267,8 +269,8 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
         if not loss_list:
             logger.info("Loss list is empty, omitting loss visualization!")
         else:
-            bins = 0 if len(loss_list) < 500 else 100
-            plot_loss(loss_list, bins=bins)
+            bins = 0 if len(loss_list) < 500 else 50
+            plot_loss(loss_list, val_acc_list, val_report_iter, bins=bins)
             plt.show()
 
 
