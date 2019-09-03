@@ -8,7 +8,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import torch
-from torch import nn
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch import optim
 
@@ -184,7 +183,6 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
     logger.debug("Number of trainable parameters in VideoMatch: {}".format(len(params)))
 
     optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
-    criterion = nn.BCELoss()
 
     stop_training = False
 
@@ -203,9 +201,10 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
         vm.seq_init(ref_img, ref_mask)
         fg_prob, _ = vm.predict_fg_bg(test_img)
-        vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
+        # vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
+        vm_avg_val_acc += segmentation_IOU(fg_prob.cpu(), test_mask)
 
-    logger.debug("Untrained Videomatch average accuracy on validation set: {:.3f}".format(vm_avg_val_acc / len(val_loader)))
+    logger.debug("Untrained Videomatch IOU on validation set: {:.3f}".format(vm_avg_val_acc / len(val_loader)))
 
     loss_list = []
     val_acc_list = []
@@ -213,7 +212,6 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
         logger.debug("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
         avg_loss = 0.
-        avg_acc = 0.
         for i, (ref_frame, test_frame) in enumerate(data_loader):
             if i >= iters or stop_training:
                 break
@@ -228,12 +226,8 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             # Use softmaxed foreground probability and groundtruth to compute BCE loss
             fg_prob, _ = vm.predict_fg_bg(test_img)
 
-            loss = criterion(input=fg_prob, target=test_mask)
+            loss = balanced_CE_loss(fg_prob, test_mask)
             avg_loss += loss.data.mean().cpu().numpy()
-
-            # TODO: should the size of segmentation also affect accuracy?
-            comp_arr = (fg_prob >= 0.5) == test_mask.byte()
-            avg_acc += torch.sum(comp_arr).cpu().numpy() / (comp_arr.shape[1] * comp_arr.shape[2])
 
             if ((i + 1) % val_report_iter == 0 or i + 1 == iters) and i > 0:
                 vm_avg_val_acc = 0.
@@ -243,10 +237,11 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
                     vm.seq_init(ref_img, ref_mask)
                     fg_prob, _ = vm.predict_fg_bg(test_img)
-                    vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
+                    # vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
+                    vm_avg_val_acc += segmentation_IOU(fg_prob.cpu(), test_mask)
                     val_cnt += 1
 
-                logger.debug("Iter [{:5d}/{}]:\tavg loss = {:.4f},\tavg val acc = {:.3f}"
+                logger.debug("Iter [{:5d}/{}]:\tavg loss = {:.4f},\tavg val IOU = {:.3f}"
                              .format(i + 1, iters, avg_loss / val_report_iter, vm_avg_val_acc / val_cnt))
 
                 val_acc_list.append(vm_avg_val_acc / val_cnt)
@@ -272,6 +267,35 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             bins = 0 if len(loss_list) < 500 else 50
             plot_loss(loss_list, val_acc_list, val_report_iter, bins=bins)
             plt.show()
+
+
+def balanced_CE_loss(y_pred, y_true, size_average=True):
+    assert len(y_pred.shape) == len(y_true.shape)
+
+    mask_size = (y_true.shape[-1] * y_true.shape[-2]) # H * W
+    fg_num = torch.sum(y_true).float()
+    bg_num = mask_size - fg_num
+    fg_share = fg_num / mask_size
+    bg_share = bg_num / mask_size
+
+    y_true_neg = -1 * (y_true - 1)
+
+    # more stable version of cross entropy
+    max_val = (-y_pred).clamp(min=0)
+    loss_mat = y_pred - y_pred * y_true + max_val + ((-max_val).exp() + (-y_true - max_val).exp()).log()
+
+    # tensorflow solution (see https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits)
+    # loss_mat = torch.max(y_pred, 0)[0] - y_pred * y_true + torch.log(1 + torch.exp(-torch.abs(y_pred)))
+
+    loss_fg = torch.sum(torch.mul(y_true, loss_mat))
+    loss_bg = torch.sum(torch.mul(y_true_neg, loss_mat))
+
+    final_loss = bg_share * loss_fg + fg_share * loss_bg
+
+    if size_average:
+        final_loss /= mask_size
+
+    return final_loss
 
 
 def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
@@ -343,6 +367,16 @@ def segmentation_accuracy(mask_pred, mask_true, fg_thresh=0.5):
     acc = torch.sum(comp_arr).cpu().numpy() / (comp_arr.shape[-1] * comp_arr.shape[-2])
 
     return acc
+
+
+def segmentation_IOU(y_pred, y_true, fg_thresh=0.5):
+    mask_pred = y_pred.byte() >= fg_thresh
+    mask_true = y_true.byte()
+
+    if np.isclose(torch.sum(mask_pred), 0) and np.isclose(torch.sum(mask_true), 0):
+        return 1
+    else:
+        return torch.sum(mask_true & mask_pred) / torch.sum((mask_true | mask_pred)).float()
 
 
 if __name__ == '__main__':
