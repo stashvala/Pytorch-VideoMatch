@@ -167,7 +167,7 @@ def main():
         data_loader = DataLoader(dataset, sampler=multiframe_sampler, collate_fn=collate_multiframes,
                                  batch_size=batch_size, num_workers=batch_size)
 
-        if not isdir(results_dir):
+        if results_dir is not None and not isdir(results_dir):
             mkdir(results_dir)
 
         eval_vm(data_loader, vm, img_shape, visualize, results_dir)
@@ -179,10 +179,10 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
     # set model to train mode
     vm.feat_net.train()
 
-    params = list(filter(lambda p: p.requires_grad, vm.feat_net.parameters()))
-    logger.debug("Number of trainable parameters in VideoMatch: {}".format(len(params)))
+    weight_num = sum(p.numel() for p in vm.feat_net.parameters() if p.requires_grad)
+    logger.debug("Number of trainable parameters in VideoMatch: {}".format(weight_num))
 
-    optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
+    optimizer = optim.Adam(vm.feat_net.parameters(), lr=lr, weight_decay=weight_decay)
 
     stop_training = False
 
@@ -206,6 +206,8 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
     logger.debug("Untrained Videomatch IOU on validation set: {:.3f}".format(vm_avg_val_acc / len(val_loader)))
 
+    criterion = torch.nn.BCELoss()
+
     loss_list = []
     val_acc_list = []
     for epoch in range(epochs):
@@ -226,7 +228,9 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             # Use softmaxed foreground probability and groundtruth to compute BCE loss
             fg_prob, _ = vm.predict_fg_bg(test_img)
 
-            loss = balanced_CE_loss(fg_prob, test_mask)
+            # loss = balanced_CE_loss(fg_prob, test_mask)
+            # loss = criterion(input=fg_prob, target=test_mask)
+            loss = dice_loss(fg_prob, test_mask)
             avg_loss += loss.data.mean().cpu().numpy()
 
             if ((i + 1) % val_report_iter == 0 or i + 1 == iters) and i > 0:
@@ -269,6 +273,17 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             plt.show()
 
 
+def dice_loss(input, target):
+    smooth = 1.
+
+    iflat = input.view(-1)
+    tflat = target.view(-1)
+    intersection = (iflat * tflat).sum()
+
+    return 1 - ((2. * intersection + smooth) /
+                (iflat.sum() + tflat.sum() + smooth))
+
+
 def balanced_CE_loss(y_pred, y_true, size_average=True):
     assert len(y_pred.shape) == len(y_true.shape)
 
@@ -280,12 +295,8 @@ def balanced_CE_loss(y_pred, y_true, size_average=True):
 
     y_true_neg = -1 * (y_true - 1)
 
-    # more stable version of cross entropy
-    max_val = (-y_pred).clamp(min=0)
-    loss_mat = y_pred - y_pred * y_true + max_val + ((-max_val).exp() + (-y_true - max_val).exp()).log()
-
     # tensorflow solution (see https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits)
-    # loss_mat = torch.max(y_pred, 0)[0] - y_pred * y_true + torch.log(1 + torch.exp(-torch.abs(y_pred)))
+    loss_mat = torch.max(y_pred, 0)[0] - y_pred * y_true + torch.log(1 + torch.exp(-torch.abs(y_pred)))
 
     loss_fg = torch.sum(torch.mul(y_true, loss_mat))
     loss_bg = torch.sum(torch.mul(y_true_neg, loss_mat))
@@ -370,7 +381,7 @@ def segmentation_accuracy(mask_pred, mask_true, fg_thresh=0.5):
 
 
 def segmentation_IOU(y_pred, y_true, fg_thresh=0.5):
-    mask_pred = y_pred.byte() >= fg_thresh
+    mask_pred = y_pred >= fg_thresh
     mask_true = y_true.byte()
 
     if np.isclose(torch.sum(mask_pred), 0) and np.isclose(torch.sum(mask_true), 0):
