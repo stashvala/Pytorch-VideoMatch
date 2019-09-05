@@ -6,6 +6,7 @@ from os import mkdir
 
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image
 
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
@@ -325,13 +326,13 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
             next_seq_buff = []
 
         if curr_seq != frames[0].seq:
-            if curr_seq is not None and visualize:
-                process_results(curr_seq, segm_list, results_dir)
+            if curr_seq is not None:
+                process_results(curr_seq, segm_list, visualize, results_dir)
 
             curr_seq = frames[0].seq
             ref_frame = frames[0]
             test_frames = frames[1:]
-            segm_list = []
+            segm_list = [np.array(ref_frame.ann)]
 
             ref_img = basic_img_transform(ref_frame.img, img_shape)
             ref_mask = basic_ann_transform(ref_frame.ann, img_shape)
@@ -359,14 +360,26 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
         vm_out = vm.segment(test_ts)
         segm_list.extend([x.data.cpu().numpy() for x in vm_out.unbind(0)])
 
-    # visualize for last sequence in dataset
+    # process for last sequence in dataset
+    process_results(curr_seq, segm_list, visualize, results_dir)
+
+
+def process_results(curr_seq, segm_list, visualize=False, results_dir=None):
     if visualize:
-        process_results(curr_seq, segm_list, results_dir)
+        out_file = None if results_dir is None else "{}/{}.mp4".format(results_dir, curr_seq.name)
+        plot_sequence_result(curr_seq, segm_list, out_file=out_file)
+    if results_dir is not None:
+        save_eval_results(segm_list, "{}/{}".format(results_dir, curr_seq.name))
 
 
-def process_results(curr_seq, segm_list, results_dir=None):
-    out_file = None if results_dir is None else "{}/{}.mp4".format(results_dir, curr_seq.name)
-    plot_sequence_result(curr_seq, segm_list, out_file=out_file)
+def save_eval_results(segmentations, sequence_dir, leading_zeros=5, img_format="png"):
+    if not isdir(sequence_dir):
+        mkdir(sequence_dir)
+
+    for i, seg in enumerate(segmentations):
+        seg_name = "{}/{:0{}d}.{}".format(sequence_dir, i, leading_zeros, img_format)
+        Image.fromarray(seg).save(seg_name)
+        logger.debug("Saved {}".format(seg_name))
 
 
 def segmentation_accuracy(mask_pred, mask_true, fg_thresh=0.5):

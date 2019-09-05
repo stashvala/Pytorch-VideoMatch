@@ -61,7 +61,7 @@ def blend_img_segmentation(img, seg, color='r', alpha=0.4):
 
 
 def plot_sequence_result(seq, segmentations, out_file=None, fig=None):
-    assert ((len(seq) - 1) == len(segmentations))
+    assert len(seq) == len(segmentations)
 
     fig = plt.figure() if fig is None else fig
     ax = plt.gca()
