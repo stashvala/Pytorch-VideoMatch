@@ -1,6 +1,5 @@
 import argparse
 import signal
-from time import time
 from os.path import isdir
 from os import mkdir
 
@@ -378,6 +377,7 @@ def save_eval_results(segmentations, sequence_dir, leading_zeros=5, img_format="
 
     for i, seg in enumerate(segmentations):
         seg_name = "{}/{:0{}d}.{}".format(sequence_dir, i, leading_zeros, img_format)
+        # TODO: images are black even though class values are saved, maybe set pallete for PIL.Image
         Image.fromarray(seg).save(seg_name)
         logger.debug("Saved {}".format(seg_name))
 
