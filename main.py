@@ -195,21 +195,21 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
     signal.signal(signal.SIGINT, sigint_handler)
 
     # check videomatch avg val accuracy
-    vm_avg_val_acc = 0.
+    vm_avg_val_score = 0.
     for val_ref_frame, val_test_frame in val_loader:
         (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
 
         vm.seq_init(ref_img, ref_mask)
         fg_prob, _ = vm.predict_fg_bg(test_img)
-        # vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
-        vm_avg_val_acc += segmentation_IOU(fg_prob.cpu(), test_mask)
+        # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
+        vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
 
-    logger.debug("Untrained Videomatch IOU on validation set: {:.3f}".format(vm_avg_val_acc / len(val_loader)))
+    logger.debug("Untrained Videomatch IOU on validation set: {:.3f}".format(vm_avg_val_score / len(val_loader)))
 
     criterion = torch.nn.BCELoss()
 
     loss_list = []
-    val_acc_list = []
+    val_score_list = []
     for epoch in range(epochs):
         logger.debug("Epoch: \t[{}/{}]".format(epoch + 1, epochs))
 
@@ -220,7 +220,7 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
             # preprocess
             (ref_img, ref_mask), (test_img, test_mask) = fp(ref_frame, test_frame)
-            test_mask = test_mask.unsqueeze(0).cuda(device).float()
+            test_mask = test_mask.unsqueeze(0).to(device).float()
 
             # initialize every time since reference image keeps changing
             vm.seq_init(ref_img, ref_mask)
@@ -234,21 +234,21 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             avg_loss += loss.data.mean().cpu().numpy()
 
             if ((i + 1) % val_report_iter == 0 or i + 1 == iters) and i > 0:
-                vm_avg_val_acc = 0.
+                vm_avg_val_score = 0.
                 val_cnt = 0
                 for val_ref_frame, val_test_frame in val_loader:
                     (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
 
                     vm.seq_init(ref_img, ref_mask)
                     fg_prob, _ = vm.predict_fg_bg(test_img)
-                    # vm_avg_val_acc += segmentation_accuracy(fg_prob, test_mask.cuda(device))
-                    vm_avg_val_acc += segmentation_IOU(fg_prob.cpu(), test_mask)
+                    # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
+                    vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
                     val_cnt += 1
 
                 logger.debug("Iter [{:5d}/{}]:\tavg loss = {:.4f},\tavg val IOU = {:.3f}"
-                             .format(i + 1, iters, avg_loss / val_report_iter, vm_avg_val_acc / val_cnt))
+                             .format(i + 1, iters, avg_loss / val_report_iter, vm_avg_val_score / val_cnt))
 
-                val_acc_list.append(vm_avg_val_acc / val_cnt)
+                val_score_list.append(vm_avg_val_score / val_cnt)
                 loss_list.append(avg_loss / val_report_iter)
                 avg_loss = 0.
 
@@ -269,7 +269,7 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             logger.info("Loss list is empty, omitting loss visualization!")
         else:
             bins = 0 if len(loss_list) < 500 else 50
-            plot_loss(loss_list, val_acc_list, val_report_iter, bins=bins)
+            plot_loss(loss_list, val_score_list, val_report_iter, bins=bins)
             plt.show()
 
 

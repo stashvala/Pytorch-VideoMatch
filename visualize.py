@@ -115,13 +115,13 @@ def plot_dilation(mask_orig, mask_dil, title="", axes=None):
     return axes
 
 
-def plot_loss(loss_list, val_acc_list, report_iters, bins=100, clip_max=1.0, ax=None):
+def plot_loss(loss_list, val_score_list, report_iters, bins=100, clip_max=1.0, ax=None):
     if bins == 0:
-        loss_bins, val_bins = loss_list, val_acc_list
+        loss_bins, val_bins = loss_list, val_score_list
     else:
         loss_bins, val_bins = [], []
         loss_tmp, val_tmp = [], []
-        for i, (l, v) in enumerate(zip(loss_list, val_acc_list)):
+        for i, (l, v) in enumerate(zip(loss_list, val_score_list)):
             loss_tmp.append(l)
             val_tmp.append(v)
             if (i + 1) % bins == 0:
@@ -141,9 +141,10 @@ def plot_loss(loss_list, val_acc_list, report_iters, bins=100, clip_max=1.0, ax=
 
     ax1.set_xlabel('Število iteracij')
     ax1.set_ylabel('Vrednost kriterijske funkcije', color='b')
-    ax2.set_ylabel('Klas. točnost na val. množici', color='r')
+    ax2.set_ylabel('IOU', color='r')
 
     # save fig because of weird crop
-    plt.savefig("vmfinetuningloss.png", bbox_inches='tight')
+    plot_name = "vm_dice1e-4"
+    plt.savefig("{}.png".format(plot_name), bbox_inches='tight')
 
     return ax
