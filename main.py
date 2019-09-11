@@ -395,7 +395,7 @@ def segmentation_accuracy(mask_pred, mask_true, fg_thresh=0.5):
 
 
 def segmentation_IOU(y_pred, y_true, fg_thresh=0.5):
-    mask_pred = y_pred >= fg_thresh
+    mask_pred = (y_pred >= fg_thresh).byte()
     mask_true = y_true.byte()
 
     if np.isclose(torch.sum(mask_pred), 0) and np.isclose(torch.sum(mask_true), 0):
