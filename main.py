@@ -356,8 +356,9 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
 
         test_imgs = [basic_img_transform(f.img, img_shape) for f in test_frames]
         test_ts = torch.stack(test_imgs)
-        vm_out = vm.segment(test_ts)
-        segm_list.extend([x.data.cpu().numpy() for x in vm_out.unbind(0)])
+        with torch.set_grad_enabled(False):
+            vm_out = vm.segment(test_ts)
+            segm_list.extend([x.data.cpu().numpy() for x in vm_out.unbind(0)])
 
     # process for last sequence in dataset
     process_results(curr_seq, segm_list, visualize, results_dir)
