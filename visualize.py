@@ -136,8 +136,8 @@ def plot_loss(loss_list, val_score_list, report_iters, bins=100, clip_max=1.0, a
     ax2 = ax1.twinx()
 
     x_iters = np.arange(report_iters, (len(loss_bins) + 1) * report_iters, report_iters)
-    ax1.plot(x_iters, loss_bins, 'b', label='BCE')
-    ax2.plot(x_iters, val_bins, 'r', label='Val_acc')
+    ax1.plot(x_iters, loss_bins, 'b')
+    ax2.plot(x_iters, val_bins, 'r')
 
     ax1.set_xlabel('Število iteracij')
     ax1.set_ylabel('Vrednost kriterijske funkcije', color='b')

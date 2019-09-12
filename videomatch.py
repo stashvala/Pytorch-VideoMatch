@@ -32,11 +32,10 @@ class VideoMatch:
         self.mask_fg = mask_t.float()  # cast to float just in case it's byte tensor
         while len(self.mask_fg.shape) < 4:
             self.mask_fg = self.mask_fg.unsqueeze(0)
-        self.mask_bg = (~ self.mask_fg.byte()).float()
 
         # downsample to ref_feat shape, add dim because sim_mat is 5D
         self.mask_fg = interpolate(self.mask_fg, size=self.feat_shape, mode='bilinear', align_corners=False).unsqueeze(0)
-        self.mask_bg = interpolate(self.mask_bg, size=self.feat_shape, mode='bilinear', align_corners=False).unsqueeze(0)
+        self.mask_bg = -1 * (self.mask_fg - 1)
 
         self.mask_fg, self.mask_bg = self.to_device(self.mask_fg, self.mask_bg)
 

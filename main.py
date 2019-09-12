@@ -59,6 +59,10 @@ def parse_args():
                         help="Input image shape (default: 256 456)")
     parser.add_argument("--segmentation_shape", '-g', metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
                         help="Segmentation output shape (default: input image size)")
+    parser.add_argument("--leave_outliers", '-ro', default=False, action='store_true',
+                        help="Don't remove outliers in output mask with extruding it with dilated mask from previous frame.")
+    parser.add_argument("--fg_thresh", '-fg', type=float, default=0.5,
+                        help="Foreground threshold when converting segmentation probability to mask (default: 0.5).")
 
     parser.add_argument("--val_report", '-r', metavar='ITER', default=50, type=int,
                         help="Report validation score on every n-th iteration. Set to -1 to turn it off (default: 50)")
@@ -104,6 +108,8 @@ def main():
     # videomatch related
     img_shape = parsed_args.input_image_shape
     seg_shape = parsed_args.segmentation_shape
+    remove_outliers = not parsed_args.leave_outliers
+    fg_thresh = parsed_args.fg_thresh
 
     # misc
     val_report_iter = parsed_args.val_report
@@ -170,7 +176,7 @@ def main():
         if results_dir is not None and not isdir(results_dir):
             mkdir(results_dir)
 
-        eval_vm(data_loader, vm, img_shape, visualize, results_dir)
+        eval_vm(data_loader, vm, img_shape, fg_thresh, remove_outliers, visualize, results_dir)
 
 
 def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
@@ -309,7 +315,7 @@ def balanced_CE_loss(y_pred, y_true, size_average=True):
     return final_loss
 
 
-def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
+def eval_vm(data_loader, vm, img_shape, fg_thresh=0.5, remove_outliers=False, visualize=True, results_dir=None):
 
     # set model to eval mode
     vm.feat_net.eval()
@@ -319,6 +325,7 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
     curr_seq = None
     segm_list = []
     next_seq_buff = []
+    prev_mask = None
     for frames in data_loader:
         if next_seq_buff:
             frames = next_seq_buff + frames
@@ -335,6 +342,7 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
 
             ref_img = basic_img_transform(ref_frame.img, img_shape)
             ref_mask = basic_ann_transform(ref_frame.ann, img_shape)
+            prev_mask = ref_mask
 
             vm.seq_init(ref_img, ref_mask)
 
@@ -357,8 +365,16 @@ def eval_vm(data_loader, vm, img_shape, visualize=True, results_dir=None):
         test_imgs = [basic_img_transform(f.img, img_shape) for f in test_frames]
         test_ts = torch.stack(test_imgs)
         with torch.set_grad_enabled(False):
-            vm_out = vm.segment(test_ts)
-            segm_list.extend([x.data.cpu().numpy() for x in vm_out.unbind(0)])
+            vm_out = vm.segment(test_ts, thresh=fg_thresh)
+            if remove_outliers:
+                vm_out_clean = []
+                for curr_mask in vm_out:
+                    curr_mask = vm.outlier_removal(prev_mask, curr_mask)
+                    vm_out_clean.append(curr_mask)
+                    prev_mask = curr_mask
+                vm_out = vm_out_clean
+
+            segm_list.extend([x.cpu().numpy() for x in vm_out])
 
     # process for last sequence in dataset
     process_results(curr_seq, segm_list, visualize, results_dir)
