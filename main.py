@@ -55,7 +55,7 @@ def parse_args():
                         help="Weight decay for Adam (default: 0.0005)")
     parser.add_argument("--validation_size", default=0.0025, type=float, help="Validation set size (default: 0.0025)")
 
-    parser.add_argument("--input_image_shape", '-p', metavar=('HEIGHT', 'WIDTH'), default=(256, 456), nargs=2, type=int,
+    parser.add_argument("--input_image_shape", '-p', metavar=('HEIGHT', 'WIDTH'), default=(480, 854), nargs=2, type=int,
                         help="Input image shape (default: 256 456)")
     parser.add_argument("--segmentation_shape", '-g', metavar=('HEIGHT', 'WIDTH'), nargs=2, type=int,
                         help="Segmentation output shape (default: input image size)")
@@ -202,13 +202,14 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
     # check videomatch avg val accuracy
     vm_avg_val_score = 0.
-    for val_ref_frame, val_test_frame in val_loader:
-        (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
+    with torch.set_grad_enabled(False):
+        for val_ref_frame, val_test_frame in val_loader:
+            (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
 
-        vm.seq_init(ref_img, ref_mask)
-        fg_prob, _ = vm.predict_fg_bg(test_img)
-        # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
-        vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
+            vm.seq_init(ref_img, ref_mask)
+            fg_prob, _ = vm.predict_fg_bg(test_img)
+            # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
+            vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
 
     logger.debug("Untrained Videomatch IOU on validation set: {:.3f}".format(vm_avg_val_score / len(val_loader)))
 
@@ -242,14 +243,15 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             if ((i + 1) % val_report_iter == 0 or i + 1 == iters) and i > 0:
                 vm_avg_val_score = 0.
                 val_cnt = 0
-                for val_ref_frame, val_test_frame in val_loader:
-                    (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
+                with torch.set_grad_enabled(False):
+                    for val_ref_frame, val_test_frame in val_loader:
+                        (ref_img, ref_mask), (test_img, test_mask) = fp(val_ref_frame, val_test_frame)
 
-                    vm.seq_init(ref_img, ref_mask)
-                    fg_prob, _ = vm.predict_fg_bg(test_img)
-                    # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
-                    vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
-                    val_cnt += 1
+                        vm.seq_init(ref_img, ref_mask)
+                        fg_prob, _ = vm.predict_fg_bg(test_img)
+                        # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
+                        vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
+                        val_cnt += 1
 
                 logger.debug("Iter [{:5d}/{}]:\tavg loss = {:.4f},\tavg val IOU = {:.3f}"
                              .format(i + 1, iters, avg_loss / val_report_iter, vm_avg_val_score / val_cnt))
