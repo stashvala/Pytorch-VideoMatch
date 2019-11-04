@@ -132,19 +132,14 @@ def plot_loss(loss_list, val_score_list, report_iters, bins=100, clip_max=1.0, a
                 loss_tmp, val_tmp = [], []
 
     ax1 = plt.gca() if ax is None else ax
-
     ax2 = ax1.twinx()
 
     x_iters = np.arange(report_iters, (len(loss_bins) + 1) * report_iters, report_iters)
     ax1.plot(x_iters, loss_bins, 'b')
     ax2.plot(x_iters, val_bins, 'r')
 
-    ax1.set_xlabel('Število iteracij')
-    ax1.set_ylabel('Vrednost kriterijske funkcije', color='b')
+    ax1.set_xlabel('Iterations')
+    ax1.set_ylabel('Loss function', color='b')
     ax2.set_ylabel('IOU', color='r')
-
-    # save fig because of weird crop
-    plot_name = "vm_dice1e-4"
-    plt.savefig("{}.png".format(plot_name), bbox_inches='tight')
 
     return ax

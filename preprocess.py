@@ -127,8 +127,8 @@ if __name__ == '__main__':
 
     from visualize import blend_img_segmentation
 
-    if len(sys.argv) < 3:
-        raise ValueError("expected at least two arguments, "
+    if len(sys.argv) != 3:
+        raise ValueError("expected two arguments, "
                          "path to image and it's annotation! \nI got {}".format(sys.argv))
 
     ref_img = Image.open(sys.argv[1])

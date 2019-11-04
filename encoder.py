@@ -10,7 +10,7 @@ class Encoder(nn.Module):
 
     ENCODER_TYPES = {"resnet": 0, "vgg": 1}
 
-    def __init__(self, encoder_type="vgg", upsample_fac=1.8):
+    def __init__(self, encoder_type="vgg", upsample_fac=1):
         super(Encoder, self).__init__()
 
         if encoder_type not in self.ENCODER_TYPES.keys():
@@ -22,48 +22,20 @@ class Encoder(nn.Module):
         if self.encoder_type == 0:
             self.feat_ext = resnet101(pretrained=True)
         else:
-            self.feat_ext = self.load_vgg(19)
+            self.feat_ext = self.load_vgg()
+
         logger.info("Using {} as encoder".format(encoder_type))
 
-        # self.freeze_all_layers_except(self.feat_ext.layer2)
-
     @staticmethod
-    def load_vgg(layers):
-        """
-        Loads VGG with weights using model from pytorch.
-        Using only feature part of VGG (without FC layer) and removes last few layers.
-        :param layers: number of layers (16 or 19)
-        :param use_bn: load VGG with batch normalization
-        :return: pretrained VGG
-        """
-        if layers not in [16, 19]:
-            raise ValueError("Vgg{} not implemented!".format(layers))
+    def load_vgg19():
+        feats = vgg19(pretrained=True).features
 
-        if layers == 19:
-            vgg = vgg19(pretrained=True)
-        else:
-            raise ValueError("currently only vgg 19")
-
-        feats = vgg.features
-
-        # remove last layers two maxpools:
+        # remove last layers two maxpools so final feature size isn't smaller for factor 16
         pools = 0
         while pools < 2:
             _, layer = feats._modules.popitem()
             if isinstance(layer, nn.MaxPool2d):
                 pools += 1
-
-        # delete another layer, because openpose does so also
-        to_delete = 2  # Only Relu and Conv2d if no batch normalization
-        for _ in range(to_delete):
-            feats._modules.popitem()
-
-        # This is legacy code, we screwed up when reading the article and accidentally returned 11 layers instead of 10
-        # Problem is only with models using vgg16. So far we won't delete 11th layer to avoid breaking the backward compatibility
-        # with trained models.
-        if layers == 19:
-            for _ in range(to_delete):
-                feats._modules.popitem()
 
         # return first 10 feature layers of VGG
         return feats
@@ -89,16 +61,6 @@ class Encoder(nn.Module):
         x = interpolate(x, size=upsample_size, mode='bilinear', align_corners=False)
 
         return x
-
-    def freeze_all_layers_except(self, lay):
-        used_layers = self.feat_ext.conv1, self.feat_ext.bn1, self.feat_ext.relu, \
-                      self.feat_ext.maxpool, self.feat_ext.layer1, self.feat_ext.layer2
-        for l in used_layers:
-            if l is lay:
-                continue
-
-            for param in l.parameters():
-                param.requires_grad = False
 
     def save_weights(self, path):
         torch.save(self.feat_ext.state_dict(), path)

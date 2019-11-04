@@ -44,9 +44,9 @@ def parse_args():
     parser.add_argument("--batch_size", '-b', default=1, type=int, help="Batch size for eval mode (default: 1)")
     parser.add_argument("--epochs", '-e', default=1, type=int,
                         help="Number of epochs to iterate through whole dataset when training (default: 1)")
-    parser.add_argument("--iters", '-i', default=10000, type=int,
+    parser.add_argument("--iters", '-i', default=-1, type=int,
                         help="Number of image pairs to iterate through when training. "
-                             "Use value -1 to use all dataset pairs (default: 10000)")
+                             "Use value -1 to use all dataset pairs (default: -1)")
     parser.add_argument("--no-augment", '-a', default=False, action='store_true',
                         help="Don't augment frames during training (default: False)")
     parser.add_argument("--learning_rate", '-l', default=1e-5, type=float,
@@ -54,6 +54,8 @@ def parse_args():
     parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
                         help="Weight decay for Adam (default: 0.0005)")
     parser.add_argument("--validation_size", default=0.0025, type=float, help="Validation set size (default: 0.0025)")
+    parser.add_argument("--loss_function", '-lf', default='dice', choices=['bce', 'balancedbce', 'dice'], type=str,
+                        help="Loss function for training the encoder (default: dice)")
 
     parser.add_argument("--input_image_shape", '-p', metavar=('HEIGHT', 'WIDTH'), default=(480, 854), nargs=2, type=int,
                         help="Input image shape (default: 256 456)")
@@ -63,13 +65,19 @@ def parse_args():
                         help="Don't remove outliers in output mask with extruding it with dilated mask from previous frame.")
     parser.add_argument("--fg_thresh", '-fg', type=float, default=0.5,
                         help="Foreground threshold when converting segmentation probability to mask (default: 0.5).")
+    parser.add_argument("--encoder", '-en', default='vgg', choices=['resnet', 'vgg'], type=str,
+                        help="CNN encoder for generating features from images (default: vgg)")
+    parser.add_argument("--upscale_factor", '-uf', default=1, type=int,
+                        help="Upscale height and width of features with bilinear interpolation, "
+                             "increase for better segmentation performance or decrease, "
+                             "if you are getting 'CUDA out of memory error' (default: 1)")
 
     parser.add_argument("--val_report", '-r', metavar='ITER', default=50, type=int,
                         help="Report validation score on every n-th iteration. Set to -1 to turn it off (default: 50)")
     parser.add_argument("--visualize", '-v', default=False, action='store_true',
-                        help="Visualize results in eval mode (default: False)")
+                        help="Visualize results (animation) in eval mode (default: False)")
     parser.add_argument("--results_dir", '-j',
-                        help="Save segmented videosequences to folder. Visualization flag (-v) required!")
+                        help="Save segmented sequences to a folder.")
     parser.add_argument("--logger", '-f', metavar="LEVEL", choices=['debug', 'info', 'warn', 'fatal'], default='debug',
                         help="Choose logger output level (default: debug)")
     parser.add_argument("--loss_visualization", '-x', default=False, action='store_true',
@@ -104,12 +112,15 @@ def main():
     lr = parsed_args.learning_rate
     weight_decay = parsed_args.weight_decay
     validation_size = parsed_args.validation_size
+    loss_function = parsed_args.loss_function
 
     # videomatch related
     img_shape = parsed_args.input_image_shape
     seg_shape = parsed_args.segmentation_shape
     remove_outliers = not parsed_args.leave_outliers
     fg_thresh = parsed_args.fg_thresh
+    encoder = parsed_args.encoder
+    upsample_fac = parsed_args.upsample_factor
 
     # misc
     val_report_iter = parsed_args.val_report
@@ -134,14 +145,11 @@ def main():
     if mode != 'eval' and visualize:
         logger.warning("Visualize is set to True, but mode isn't 'eval'")
 
-    if results_dir is not None and not visualize:
-        logger.warning("Visualization has to be enabled to save the results")
-
     device = None if cuda_dev is None else "cuda:{:d}".format(cuda_dev)
 
     dataset = Davis(davis_dir, year, dataset_mode, seq_names)
 
-    vm = VideoMatch(out_shape=seg_shape, device=device)
+    vm = VideoMatch(out_shape=seg_shape, device=device, encoder=encoder, upsample_fac=upsample_fac)
     if model_load_path is not None:
         logger.info("Loading model from path {}".format(model_load_path))
         vm.load_model(model_load_path)
@@ -166,7 +174,7 @@ def main():
         fp = FrameAugmentor(img_shape, augment)
 
         train_vm(train_loader, val_loader, vm, fp, device, lr, weight_decay, iters, epochs,
-                 val_report_iter, model_save_path, loss_visualize)
+                 val_report_iter, model_save_path, loss_visualize, loss_function)
 
     elif mode == 'eval':
         multiframe_sampler = MultiFrameSampler(dataset)
@@ -180,7 +188,7 @@ def main():
 
 
 def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
-             val_report_iter=10, model_save_path=None, loss_visualize=False):
+             val_report_iter=50, model_save_path=None, loss_visualize=False, loss_function="dice"):
 
     # set model to train mode
     vm.feat_net.train()
@@ -213,7 +221,14 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
     logger.debug("Untrained Videomatch IOU on validation set: {:.3f}".format(vm_avg_val_score / len(val_loader)))
 
-    criterion = torch.nn.BCELoss()
+    if loss_function == "dice":
+        loss_function = dice_loss
+    elif loss_function == "bce":
+        loss_function = torch.nn.BCELoss()
+    elif loss_function == "balancedbce":
+        loss_function = balanced_CE_loss
+    else:
+        raise ValueError("Loss function {} is uknown, use 'dice', 'bce' or 'balancedbce'!".format(loss_function))
 
     loss_list = []
     val_score_list = []
@@ -235,9 +250,7 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             # Use softmaxed foreground probability and groundtruth to compute BCE loss
             fg_prob, _ = vm.predict_fg_bg(test_img)
 
-            # loss = balanced_CE_loss(fg_prob, test_mask)
-            # loss = criterion(input=fg_prob, target=test_mask)
-            loss = dice_loss(fg_prob, test_mask)
+            loss = loss_function(fg_prob, test_mask)
             avg_loss += loss.data.mean().cpu().numpy()
 
             if ((i + 1) % val_report_iter == 0 or i + 1 == iters) and i > 0:
@@ -249,7 +262,6 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
                         vm.seq_init(ref_img, ref_mask)
                         fg_prob, _ = vm.predict_fg_bg(test_img)
-                        # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
                         vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
                         val_cnt += 1
 
@@ -281,9 +293,7 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             plt.show()
 
 
-def dice_loss(input, target):
-    smooth = 1.
-
+def dice_loss(input, target, smooth=1.):
     iflat = input.view(-1)
     tflat = target.view(-1)
     intersection = (iflat * tflat).sum()
@@ -405,7 +415,6 @@ def segmentation_accuracy(mask_pred, mask_true, fg_thresh=0.5):
     # check same height and width
     assert mask_pred.shape[-2:] == mask_true.shape[-2:]
 
-    # TODO: should the size of segmentation also affect accuracy?
     comp_arr = (mask_pred >= fg_thresh) == mask_true.byte()
     acc = torch.sum(comp_arr).cpu().numpy() / (comp_arr.shape[-1] * comp_arr.shape[-2])
 

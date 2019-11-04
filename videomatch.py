@@ -5,7 +5,7 @@ from encoder import Encoder
 
 
 class VideoMatch:
-    def __init__(self, k=20, d=51, out_shape=None, device=None):
+    def __init__(self, k=20, d=51, out_shape=None, device=None, encoder="vgg", upsample_fac=1):
 
         self.device = device
         self.k = k
@@ -18,7 +18,7 @@ class VideoMatch:
         self.feat_shape = (0, 0)
         self.out_shape = out_shape
 
-        self.feat_net = self.to_device(Encoder())
+        self.feat_net = Encoder(encoder, upsample_fac).cuda(self.device)
 
     def seq_init(self, ref_t, mask_t):
         assert(len(mask_t.shape) <= 4)
@@ -147,15 +147,15 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     from preprocess import basic_img_transform, basic_ann_transform
-    from visualize import plot_fg_bg, blend_img_segmentation
+    from visualize import plot_fg_bg
 
     if len(sys.argv) < 4:
         raise ValueError("Expected at least three arguments: "
                          "path to reference image, path to mask, path to test image(s). "
                          "\nI got: {}".format(sys.argv))
 
-    img_shape = 256, 456
     ref_img = Image.open(sys.argv[1])
+    img_shape = ref_img.size[::-1]
     ref_tensor = basic_img_transform(ref_img, img_shape)
 
     mask = Image.open(sys.argv[2])
@@ -176,13 +176,3 @@ if __name__ == '__main__':
         plot_fg_bg(np.array(ref_img), np.array(mask), np.array(test_img), fg.detach().cpu().numpy(),
                    bg.detach().cpu().numpy(), (fg > bg).cpu().numpy(), name)
         plt.show()
-
-    start = time()
-    segments = vm.segment(test_tensors)
-    segment = vm.outlier_removal(mask_tensor, segments[0]).byte()
-
-    print("Segmentation for {} images with outlier detection took {:.2f} ms"
-          .format(len(test_imgs), (time() - start) * 1000))
-    blended = blend_img_segmentation(np.array(test_imgs[0]), segment.data.cpu().numpy())
-    plt.imshow(blended)
-    plt.show()
