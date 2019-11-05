@@ -2,6 +2,8 @@
 
 This is an unofficial Pytorch implementation of [`VideoMatch: Matching based Video Object Segmentation`](https://arxiv.org/pdf/1809.01123.pdf)
 
+![](docs/blackswan.gif)
+
 Currently only single object segmentation (DAVIS 2016) is supported. I also didn't implement online model update (see [ch 3.3](https://arxiv.org/pdf/1809.01123.pdf))
 and early stop with regards to validation set IOU.
 
