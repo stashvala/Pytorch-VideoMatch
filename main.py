@@ -53,7 +53,7 @@ def parse_args():
                         help="Learning rate for Adam (default: 0.00001)")
     parser.add_argument("--weight_decay", '-w', default=5e-4, type=float,
                         help="Weight decay for Adam (default: 0.0005)")
-    parser.add_argument("--validation_size", default=0.0025, type=float, help="Validation set size (default: 0.0025)")
+    parser.add_argument("--validation_size", '-vs', default=0.0025, type=float, help="Validation set size (default: 0.0025)")
     parser.add_argument("--loss_function", '-lf', default='dice', choices=['bce', 'balancedbce', 'dice'], type=str,
                         help="Loss function for training the encoder (default: dice)")
 
@@ -67,8 +67,8 @@ def parse_args():
                         help="Foreground threshold when converting segmentation probability to mask (default: 0.5).")
     parser.add_argument("--encoder", '-en', default='vgg', choices=['resnet', 'vgg'], type=str,
                         help="CNN encoder for generating features from images (default: vgg)")
-    parser.add_argument("--upscale_factor", '-uf', default=1, type=int,
-                        help="Upscale height and width of features with bilinear interpolation, "
+    parser.add_argument("--upsample_factor", '-uf', default=1., type=float,
+                        help="Upsample height and width of features with bilinear interpolation, "
                              "increase for better segmentation performance or decrease, "
                              "if you are getting 'CUDA out of memory error' (default: 1)")
 
@@ -188,7 +188,7 @@ def main():
 
 
 def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, epochs=1,
-             val_report_iter=50, model_save_path=None, loss_visualize=False, loss_function="dice"):
+             val_report_iter=50, model_save_path=None, loss_visualize=False, loss_name="dice", fg_thresh=0.5):
 
     # set model to train mode
     vm.feat_net.train()
@@ -208,6 +208,9 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
     signal.signal(signal.SIGINT, sigint_handler)
 
+    logger.debug("Using foreground threshold {}".format(fg_thresh))
+    logger.debug("Running untrained VideoMatch on validation set...")
+
     # check videomatch avg val accuracy
     vm_avg_val_score = 0.
     with torch.set_grad_enabled(False):
@@ -217,18 +220,21 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
             vm.seq_init(ref_img, ref_mask)
             fg_prob, _ = vm.predict_fg_bg(test_img)
             # vm_avg_val_score += segmentation_accuracy(fg_prob, test_mask.to(device))
-            vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
+            vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask, fg_thresh)
 
     logger.debug("Untrained Videomatch IOU on validation set: {:.3f}".format(vm_avg_val_score / len(val_loader)))
 
-    if loss_function == "dice":
+    if loss_name == "dice":
         loss_function = dice_loss
-    elif loss_function == "bce":
+    elif loss_name == "bce":
         loss_function = torch.nn.BCELoss()
-    elif loss_function == "balancedbce":
+    elif loss_name == "balancedbce":
         loss_function = balanced_CE_loss
     else:
-        raise ValueError("Loss function {} is uknown, use 'dice', 'bce' or 'balancedbce'!".format(loss_function))
+        raise ValueError("Loss function {} is uknown, use 'dice', 'bce' or 'balancedbce'!".format(loss_name))
+
+    logger.debug("Using loss function {}".format(loss_name))
+    logger.debug("Training started...")
 
     loss_list = []
     val_score_list = []
@@ -262,7 +268,7 @@ def train_vm(data_loader, val_loader, vm, fp, device, lr, weight_decay, iters, e
 
                         vm.seq_init(ref_img, ref_mask)
                         fg_prob, _ = vm.predict_fg_bg(test_img)
-                        vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask)
+                        vm_avg_val_score += segmentation_IOU(fg_prob.cpu(), test_mask, fg_thresh)
                         val_cnt += 1
 
                 logger.debug("Iter [{:5d}/{}]:\tavg loss = {:.4f},\tavg val IOU = {:.3f}"
@@ -332,6 +338,9 @@ def eval_vm(data_loader, vm, img_shape, fg_thresh=0.5, remove_outliers=False, vi
     # set model to eval mode
     vm.feat_net.eval()
 
+    logger.debug("Using foreground threshold {}".format(fg_thresh))
+    logger.debug("Evaluation started...")
+
     # complex loop that calls visualization at the end of each sequence and also handles
     # sequences with number of frames that isn't divisible with batch size
     curr_seq = None
@@ -344,10 +353,14 @@ def eval_vm(data_loader, vm, img_shape, fg_thresh=0.5, remove_outliers=False, vi
             next_seq_buff = []
 
         if curr_seq != frames[0].seq:
+            # end of a sequence
             if curr_seq is not None:
                 process_results(curr_seq, segm_list, visualize, results_dir)
 
+            # start of a (new) sequence
             curr_seq = frames[0].seq
+            logger.debug("Evaluating sequence {}".format(curr_seq))
+
             ref_frame = frames[0]
             test_frames = frames[1:]
             segm_list = [np.array(ref_frame.ann)]

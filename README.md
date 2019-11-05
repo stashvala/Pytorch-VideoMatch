@@ -22,10 +22,13 @@ Currently only batch size of 1 is supported for training because of the implemen
 
 Example:
 ```bash
-python3 main.py -c 0 -m train -t train -s models/vm_vgg.pth -l 1e-5
+python3 main.py -c 0 -m train -t train -s models/vm_vgg.pth -p 416 790 -l 1e-5 -x
 ```
 ## Eval
 You can also generate segmentation image results for evaluation and video result.
+
+Generated segmentation images appear to be black with image viewer even though it's a binary image. 
+Need to add a palette when saving the images.
 
 In case you have enabled the result video visualization (flag `-v`) you need to manually close matplotlib figure or
 the evaluation won't continue. Either matplotlib has a bug or I'm doing something wrong...
@@ -36,15 +39,24 @@ python3 main.py -c 0 -m eval -t val -u -o models/vm_vgg.pth -j vm_results -v
 ```
 
 ## Other
-
 You can run `videomatch.py` with reference image path, reference mask path and multiple test image paths to visualize foreground and background probabilities.
+
 Example:
 ```bash
 python3 videomatch.py DAVIS/JPEGImages/480p/bear/00000.jpg DAVIS/Annotations/480p/bear/00000.png DAVIS/JPEGImages/480p/bear/00001.jpg
 ```
 
 To visualize image augmentation run `preprocess.py`
+
 Example:
 ```bash
 python3 preprocess.py DAVIS/JPEGImages/480p/bear/00000.jpg DAVIS/Annotations/480p/bear/00000.png
 ```
+
+## Results
+Running this code on DAVIS 2016 (single object segmentation) with VGG19 encoder and upsample factor of 1.8 
+on 1080 Ti I managed to achieve these results:
+
+| J&F-Mean | J-Mean | J-Recall | J-Decay | F-Mean | F-Recall | F-Decay |
+| ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| 0.652 | 0.655 | 0.720 | 0.219 | 0.649 | 0.669 | 0.202 |

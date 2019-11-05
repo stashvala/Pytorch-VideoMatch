@@ -22,9 +22,9 @@ class Encoder(nn.Module):
         if self.encoder_type == 0:
             self.feat_ext = resnet101(pretrained=True)
         else:
-            self.feat_ext = self.load_vgg()
+            self.feat_ext = self.load_vgg19()
 
-        logger.info("Using {} as encoder".format(encoder_type))
+        logger.info("Using {} as encoder, with upsample factor {}".format(encoder_type, self.upsample_fac))
 
     @staticmethod
     def load_vgg19():
